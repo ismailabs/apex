@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#101318"/>
+  <rect x="2" y="2" width="60" height="60" rx="12" fill="none" stroke="#2a2f38" stroke-width="2"/>
+  <!-- Apex kerb blocks along bottom-right corner -->
+  <path d="M40 52 L52 40 L52 47 L47 52 Z" fill="#e10600"/>
+  <path d="M31 52 L52 31 L52 38 L38 52 Z" fill="#f4f5f7"/>
+  <!-- Stylized F1 apex / chevron -->
+  <path d="M12 46 L30 12 L42 12 L25 46 Z" fill="#e10600"/>
+  <path d="M32 12 L52 46 L41 46 L27 22 Z" fill="#f4f5f7"/>
+  <!-- Speed accent bar -->
+  <rect x="12" y="49" width="22" height="4" rx="2" fill="#e10600"/>
+</svg>
