@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Apex Run: F1 Time Trial</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -11,7 +11,7 @@
 /* Full-viewport 3D canvas with trackside-timing HUD layered above. Single dark look by design. */
 :root{color-scheme:dark;--bg:#101318;--ink:#f4f5f7;--dim:#a2aab8;--acc:#e10600;--panel:rgba(16,19,24,.80);--line:#2a2f38;--card:#171b22;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:'Barlow Condensed','Arial Narrow',Arial,sans-serif;overflow:hidden}
-body{position:relative}
+body{position:relative;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 canvas#g{display:block;width:100%;height:100%;touch-action:none}
 [hidden]{display:none!important}
 .hud{position:absolute;pointer-events:none;background:var(--panel);border-left:4px solid var(--acc);padding:6px 14px;line-height:1}
@@ -56,6 +56,29 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
  .screen{background:rgba(10,12,16,.84);padding-left:max(16px,env(safe-area-inset-left,0px))}.box{margin:auto}
 }
 @media (max-height:620px){h1{font-size:60px}p{margin:6px 0 10px;font-size:18px}.lv{margin-bottom:10px}.lv canvas{max-width:150px}#pos{font-size:72px}#map{width:170px;height:126px}}
+/* Mobile touch controls, compact landscape HUD, and portrait warning */
+#touchUI{position:absolute;inset:0;pointer-events:none;z-index:4}
+#steerPad{position:absolute;left:max(14px,env(safe-area-inset-left,0px));bottom:max(14px,env(safe-area-inset-bottom,0px));display:flex;gap:12px;pointer-events:auto;touch-action:none}
+#pedalPad{position:absolute;right:max(14px,env(safe-area-inset-right,0px));bottom:max(14px,env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;pointer-events:auto;touch-action:none}
+.tbtn{background:rgba(16,19,24,.72);border:2px solid rgba(255,255,255,.24);color:var(--ink);font:800 22px 'Barlow Condensed','Arial Narrow',Arial,sans-serif;border-radius:10px;display:flex;align-items:center;justify-content:center;touch-action:none;-webkit-tap-highlight-color:transparent;transition:transform .06s,background .06s,border-color .06s}
+.tbtn.active{background:var(--acc);border-color:#fff;transform:scale(.95)}
+#tLeft,#tRight{width:clamp(68px,15vw,88px);height:clamp(64px,16vh,82px);font-size:28px}
+#tHb{grid-column:1 / -1;justify-self:end;width:104px;height:42px;font-size:16px;letter-spacing:.5px}
+#tBrake{width:76px;height:66px;font-size:18px}
+#tGas{width:86px;height:86px;font-size:20px;border-color:rgba(225,6,0,.75)}
+#rotateWarn{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg);text-align:center;padding:24px}
+#rotateWarn svg{width:72px;height:72px;color:var(--acc);animation:tilt 1.8s ease-in-out infinite}
+#rotateWarn h2{font-size:40px;font-weight:800;margin:0;line-height:1}
+#rotateWarn p{margin:0;max-width:300px;font-size:19px}
+@keyframes tilt{0%,20%{transform:rotate(0deg)}55%,80%{transform:rotate(-90deg)}100%{transform:rotate(0deg)}}
+body.mobile #tools{top:12px;bottom:auto;left:50%;transform:translateX(-50%);gap:6px}
+body.mobile #tools button{font-size:15px;padding:6px 10px}
+body.mobile .hud b{font-size:24px}body.mobile .hud small{font-size:12px}
+body.mobile #hl,body.mobile #hr{gap:10px;padding:4px 8px}body.mobile #hr>div{min-width:58px}
+body.mobile #map{width:118px;height:84px;top:64px;bottom:auto}
+body.mobile #hs{min-width:128px;bottom:max(10px,env(safe-area-inset-bottom,0px));padding:4px 10px}
+body.mobile #hs b{font-size:32px}body.mobile #gear{font-size:22px;margin-left:8px}
+body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
 </style>
 </head>
 <body>
@@ -75,7 +98,7 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
   <button id="b1" style="--c:#ff8000" aria-pressed="false"><canvas width="440" height="260"></canvas>Papaya</button>
  </div>
  <button class="go" id="goBtn">Start Race</button>
- <p style="font-size:17px">W A S D or arrow keys to drive. S brakes, then reverses. Space is the handbrake. R resets the car. C changes camera. M mutes.</p>
+ <p id="ctrlHint" style="font-size:17px">W A S D or arrow keys to drive. S brakes, then reverses. Space is the handbrake. R resets the car. C changes camera. M mutes.</p>
 </div></div>
 <div class="screen" id="end" hidden><div class="box">
  <div id="pos">1st</div>
@@ -84,7 +107,26 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
  <ol id="table"></ol>
  <button class="go" id="again">Race Again</button>
 </div></div>
-<div id="tools"><button id="mute" aria-pressed="false">Sound on (M)</button><button id="camBtn" hidden>Chase cam (C)</button></div>
+<div id="tools"><button id="mute" aria-pressed="false">Sound on (M)</button><button id="camBtn" hidden>Chase cam (C)</button><button id="resetBtn" hidden>Reset</button><button id="fsBtn" hidden>Full screen</button></div>
+<div id="touchUI" hidden>
+ <div id="steerPad">
+  <button type="button" class="tbtn" id="tLeft" aria-label="Steer left">◀</button>
+  <button type="button" class="tbtn" id="tRight" aria-label="Steer right">▶</button>
+ </div>
+ <div id="pedalPad">
+  <button type="button" class="tbtn" id="tHb" aria-label="Handbrake">DRIFT</button>
+  <button type="button" class="tbtn" id="tBrake" aria-label="Brake or Reverse">BRAKE</button>
+  <button type="button" class="tbtn" id="tGas" aria-label="Throttle">GAS</button>
+ </div>
+</div>
+<div id="rotateWarn" hidden>
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="7" y="2" width="10" height="20" rx="2"/>
+  <path d="M12 18h.01"/>
+ </svg>
+ <h2>Rotate to Landscape</h2>
+ <p>Turn your device sideways to play Apex Run in full-screen landscape.</p>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -513,8 +555,8 @@ function respawn(c){const i=c.idx;c.x=P[i][0];c.z=P[i][1];c.a=T[i];c.vx=c.vz=c.v
 function newGrid(){cars=[0,1,2,3].map(mkCar);pl=cars[2];pl.m.setLivery(LV[selected]);cars.forEach(syncModel)}
 function init(){
  newGrid();order=[];raceT=0;cd=3.2;lastN=null;S='count';parts=[];clearSkids();clearTimeout(goTimer);camSnap=true;wrongT=0;
- for(const k in K)K[k]=0;
- $('start').hidden=$('end').hidden=true;$('hud').hidden=false;$('camBtn').hidden=false;$('msg').textContent='';$('lights').textContent='';
+ for(const k in K)K[k]=0;clearTouch();
+ $('start').hidden=$('end').hidden=true;$('hud').hidden=false;$('camBtn').hidden=false;$('touchUI').hidden=!mobileUI;$('resetBtn').hidden=!mobileUI;$('msg').textContent='';$('lights').textContent='';
  $('rk').textContent=ord[2];$('lap').textContent='1/'+LAPS;$('lt').textContent=fmt(0);$('bt').textContent='--';$('sp').textContent='0';$('gear').textContent='N';$('rev').firstChild.style.width='0';
  if(document.activeElement)document.activeElement.blur();window.focus()}
 
@@ -623,7 +665,14 @@ function syncModel(c,dt=0){
  m.rain.color.set(c.brk||c.hb?0xff2020:0x4a0000)}
 
 /* ================= SIMULATION STEP (fixed 120 Hz) ================= */
-function playerInput(){return{th:K.KeyW||K.ArrowUp?1:0,br:K.KeyS||K.ArrowDown?1:0,st:(K.KeyD||K.ArrowRight?1:0)-(K.KeyA||K.ArrowLeft?1:0),hb:!!K.Space}}
+function playerInput(){
+ return{
+  th:(K.KeyW||K.ArrowUp||T_IN.th)?1:0,
+  br:(K.KeyS||K.ArrowDown||T_IN.br)?1:0,
+  st:((K.KeyD||K.ArrowRight||T_IN.right)?1:0)-((K.KeyA||K.ArrowLeft||T_IN.left)?1:0),
+  hb:!!(K.Space||T_IN.hb)
+ }
+}
 const score=c=>c.done?1e9-order.indexOf(c):c.laps*N+c.idx;
 function step(dt){
  clock+=dt;
@@ -636,7 +685,7 @@ function step(dt){
   for(const c of cars){phys(c,dt,c.isP?playerInput():ai(c,dt));trk(c,dt);if(S!=='race')break}
   if(S==='race'){collide();for(const c of cars)fx(c)}
   const wrong=pl.vf>5&&Math.cos(dA(pl.a,T[pl.idx]))<-.4;wrongT=wrong?wrongT+dt:0;
-  if(wrongT>.8){$('msg').textContent='Wrong way. Press R to reset';msgTimer=.1}
+  if(wrongT>.8){$('msg').textContent=mobileUI?'Wrong way. Tap Reset':'Wrong way. Press R to reset';msgTimer=.1}
   if(raceT>6)startLamps.forEach(l=>l.color.set(0x2a0505))}
  if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)$('msg').textContent=''}}
 
@@ -716,7 +765,7 @@ function updateSun(){
 function endRace(){
  S='end';beep(660,.3);beep(880,.3,.15);beep(1320,.5,.3);
  clearTimeout(goTimer);$('lights').textContent='';$('msg').textContent='';msgTimer=0;
- $('hud').hidden=true;$('camBtn').hidden=true;
+ $('hud').hidden=true;$('camBtn').hidden=true;$('touchUI').hidden=true;$('resetBtn').hidden=true;clearTouch();
  const place=order.indexOf(pl);
  $('pos').textContent=ord[place];$('tt').textContent=fmt(pl.finishT);$('eb').textContent=fmt(pl.best);
  const result=order.concat(cars.filter(c=>!c.done).sort((a,b)=>score(b)-score(a)));
@@ -734,14 +783,58 @@ addEventListener('keydown',e=>{
  if(e.code==='KeyC'&&driving())setCam(1-camMode);
  if(e.code==='KeyM')setMute(!muted)});
 addEventListener('keyup',e=>{K[e.code]=0;if(driving()&&e.code==='Space')e.preventDefault()});
-addEventListener('blur',()=>{for(const k in K)K[k]=0});
-document.addEventListener('visibilitychange',()=>{if(!AC)return;document.hidden?AC.suspend():AC.resume()});
+addEventListener('blur',()=>{for(const k in K)K[k]=0;clearTouch()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTouch();if(!AC)return;document.hidden?AC.suspend():AC.resume()});
 $('mute').onclick=e=>{setMute(!muted);e.currentTarget.blur()};
 $('camBtn').onclick=e=>{setCam(1-camMode);e.currentTarget.blur()};
+$('resetBtn').onclick=e=>{e.currentTarget.blur();if(S==='race'){respawn(pl);wrongT=0}};
 function pick(i){selected=i;[0,1].forEach(k=>{$('b'+k).classList.toggle('on',k===i);$('b'+k).setAttribute('aria-pressed',k===i)});
  document.documentElement.style.setProperty('--acc',i?'#ff8000':'#e10600');pl.liv=LV[i];pl.m.setLivery(LV[i])}
 $('b0').onclick=()=>pick(0);$('b1').onclick=()=>pick(1);
-$('goBtn').onclick=()=>{aud();init()};$('again').onclick=()=>{aud();init()};
+
+/* ================= MOBILE, ORIENTATION & FULLSCREEN ================= */
+const isMobile=matchMedia('(pointer: coarse)').matches||(navigator.maxTouchPoints>0&&/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+let mobileUI=isMobile,paused=false;
+const T_IN={left:false,right:false,th:false,br:false,hb:false};
+const TOUCH_BTNS=[['tLeft','left'],['tRight','right'],['tGas','th'],['tBrake','br'],['tHb','hb']];
+function clearTouch(){for(const[id,key]of TOUCH_BTNS){T_IN[key]=false;$(id).classList.remove('active')}}
+function enableMobileUI(){
+ mobileUI=true;document.body.classList.add('mobile');
+ $('ctrlHint').textContent='Tap Start Race for full-screen landscape play. Left/Right to steer, GAS / BRAKE pedals, DRIFT for handbrake.';
+ $('fsBtn').hidden=!(document.fullscreenEnabled||document.webkitFullscreenEnabled);
+ if(driving()){$('touchUI').hidden=false;$('resetBtn').hidden=S!=='race'}
+ checkOrientation()}
+function checkOrientation(){
+ const portrait=mobileUI&&window.innerHeight>window.innerWidth;
+ $('rotateWarn').hidden=!portrait;
+ if(portrait!==paused){
+  paused=portrait;
+  if(paused){clearTouch();for(const k in K)K[k]=0;if(AC&&AC.state==='running')AC.suspend()}
+  else{if(AC&&AC.state==='suspended'&&!document.hidden)AC.resume();resize()}}}
+async function enterFullscreen(){
+ const el=document.documentElement,req=el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen;
+ if(req&&!document.fullscreenElement&&!document.webkitFullscreenElement){try{await req.call(el,{navigationUI:'hide'})}catch(_){}}
+ try{await screen.orientation?.lock?.('landscape')}catch(_){}
+ resize();checkOrientation()}
+$('fsBtn').onclick=e=>{e.currentTarget.blur();
+ if(document.fullscreenElement||document.webkitFullscreenElement){const ex=document.exitFullscreen||document.webkitExitFullscreen;if(ex)try{ex.call(document)}catch(_){}}
+ else enterFullscreen()};
+function syncTouches(e){
+ if(e.cancelable)e.preventDefault();
+ if(!mobileUI)enableMobileUI();
+ const next={left:false,right:false,th:false,br:false,hb:false};
+ const rects=TOUCH_BTNS.map(([id,key])=>[key,$(id).getBoundingClientRect()]);
+ for(let i=0;i<e.touches.length;i++){
+  const t=e.touches[i],x=t.clientX,y=t.clientY;
+  for(const[key,r]of rects)if(x>=r.left-8&&x<=r.right+8&&y>=r.top-8&&y<=r.bottom+8)next[key]=true}
+ for(const[id,key]of TOUCH_BTNS){T_IN[key]=next[key];$(id).classList.toggle('active',next[key])}}
+['touchstart','touchmove','touchend','touchcancel'].forEach(ev=>$('touchUI').addEventListener(ev,syncTouches,{passive:false}));
+addEventListener('touchstart',()=>{if(!mobileUI)enableMobileUI()},{once:true,passive:true});
+addEventListener('resize',checkOrientation);
+addEventListener('orientationchange',()=>setTimeout(checkOrientation,80));
+if(isMobile)enableMobileUI();else checkOrientation();
+$('goBtn').onclick=()=>{aud();if(mobileUI)enterFullscreen();init()};
+$('again').onclick=()=>{aud();if(mobileUI)enterFullscreen();init()};
 
 /* ================= MAIN LOOP ================= */
 let W=0,H=0;
@@ -758,9 +851,10 @@ function render(dt){
 let last=0,acc=0;const STEP=1/120;
 function frame(t){
  const dt=Math.min(.1,Math.max(0,(t-last)/1000)||0);last=t;
- acc+=dt;while(acc>=STEP){step(STEP);acc-=STEP}
- for(const c of cars)syncModel(c,S==='race'?dt:0);
- updateHUD();updateAudio();render(dt);
+ if(!paused){
+  acc+=dt;while(acc>=STEP){step(STEP);acc-=STEP}
+  for(const c of cars)syncModel(c,S==='race'?dt:0);
+  updateHUD();updateAudio();render(dt)}
  requestAnimationFrame(frame)}
 newGrid();drawPreviews();setMute(muted);
 requestAnimationFrame(frame);
