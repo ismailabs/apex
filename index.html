@@ -125,6 +125,12 @@ body:not(.mobile) #startGyroBtn{display:none}
 body.tilt #tBrake{position:fixed;left:max(14px,env(safe-area-inset-left,0px));bottom:max(14px,env(safe-area-inset-bottom,0px));width:112px;height:90px}
 body.tilt #tGas{grid-column:2}
 body.autogas #tGas{display:none}
+/* Gamepad / Console support */
+.gpStatus{font-size:16px;color:var(--dim);margin:0 0 10px;line-height:1.25}
+.gpStatus.on{color:#6ee7b7}
+.gpMap{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:15px;color:var(--dim);margin-top:6px}
+.gpMap div{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.gpKey{background:var(--panel);border:1px solid var(--line);color:var(--ink);border-radius:3px;padding:1px 6px;font-weight:700;font-size:14px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -193,6 +199,21 @@ body.autogas #tGas{display:none}
    <label class="gopt">Steering help<select id="gyroAssist"><option value="0">Off</option><option value="1">Low</option><option value="2">High</option></select></label>
    <label class="gopt">Auto gas<input type="checkbox" id="gyroAuto"></label>
    <p id="gyroStatus">Gyro control is off.</p>
+  </div>
+  <div id="gamepadSection" class="ssection">
+   <h3>Gamepad / Console</h3>
+   <p id="gpStatus" class="gpStatus">No controller detected. Press any button on your gamepad.</p>
+   <label class="gopt">Controller rumble<input type="checkbox" id="gpRumble" checked></label>
+   <div class="gpMap" aria-label="Gamepad controls">
+    <div><span>Steer</span><span class="gpKey">L-Stick / D-Pad</span></div>
+    <div><span>Gas</span><span class="gpKey">RT / A</span></div>
+    <div><span>Brake / Rev</span><span class="gpKey">LT</span></div>
+    <div><span>Drift</span><span class="gpKey">B / X</span></div>
+    <div><span>Reset Car</span><span class="gpKey">Y</span></div>
+    <div><span>Camera</span><span class="gpKey">LB / RB</span></div>
+    <div><span>Pause</span><span class="gpKey">Start</span></div>
+    <div><span>Mute</span><span class="gpKey">Select</span></div>
+   </div>
   </div>
  </div>
 </div>
@@ -1080,7 +1101,7 @@ function trk(c,dt){
    const keep=1-Math.min(.4,vn*.014);c.vx*=keep;c.vz*=keep;    // impact friction
    const dir=Math.cos(rel)>=0?T[bi]:T[bi]+Math.PI;c.a+=dA(dir,c.a)*Math.min(.7,vn*.03); // glance off, nose turns along the rail
    if(vn>3){for(let k=0;k<Math.min(14,vn);k++)puff(c.x+n[0]*s*1.1,.4+Math.random()*.4,c.z+n[1]*s*1.1,c.vx*.4+(Math.random()-.5)*9,Math.random()*4,c.vz*.4+(Math.random()-.5)*9,.25+Math.random()*.25,.18,0,[1,.75,.25],1);
-    if(c.isP&&clock-lastThud>.18){lastThud=clock;thud(vn/40);shake=Math.min(1,vn/18)}}}
+    if(c.isP&&clock-lastThud>.18){lastThud=clock;thud(vn/40);shake=Math.min(1,vn/18);GAMEPAD.rumble(Math.min(1,vn/26),Math.min(1,vn/18),160)}}}
   const scrape=Math.exp(-.5*dt);c.vx*=scrape;c.vz*=scrape}
  c.lat=lat;
  const al=Math.abs(lat);c.onCurb=al>HW-.6&&al<=HW+CURB+.5;c.onTrack=al<=HW+CURB+.4;
@@ -1115,7 +1136,7 @@ function collide(){
   if(!best)continue;
   const{d,nx,nz}=best,p=(2.1-d)/2;a.x-=nx*p;a.z-=nz*p;b.x+=nx*p;b.z+=nz*p;
   const rv=(b.vx-a.vx)*nx+(b.vz-a.vz)*nz;
-  if(rv<0){const m=-rv*.62;a.vx-=m*nx;a.vz-=m*nz;b.vx+=m*nx;b.vz+=m*nz;if(S==='race'&&(a.isP||b.isP)&&-rv>4&&clock-lastThud>.18){lastThud=clock;thud(-rv/50);shake=Math.max(shake,Math.min(.7,-rv/20))}}}}
+  if(rv<0){const m=-rv*.62;a.vx-=m*nx;a.vz-=m*nz;b.vx+=m*nx;b.vz+=m*nz;if(S==='race'&&(a.isP||b.isP)&&-rv>4&&clock-lastThud>.18){lastThud=clock;thud(-rv/50);shake=Math.max(shake,Math.min(.7,-rv/20));GAMEPAD.rumble(Math.min(.9,-rv/28),Math.min(.7,-rv/20),140)}}}}
 
 function fx(c){
  const f=Math.cos(c.a),g=Math.sin(c.a),sp=c.spd;
@@ -1149,15 +1170,16 @@ function tiltAssist(c,st){
  const help=clamp(2*sp*Math.sin(d)/dist/maxYaw(sp)*1.15,-1,1);
  return assistBlend(st,help,a*clamp((c.vf-8)/12,0,1))}
 function playerInput(){
+ const gp=GAMEPAD.state;
  const kt=((K.KeyD||K.ArrowRight||T_IN.right)?1:0)-((K.KeyA||K.ArrowLeft||T_IN.left)?1:0);
- const tilt=GYRO.isActive(),useTilt=tilt&&kt===0;
- const br=(K.KeyS||K.ArrowDown||T_IN.br)?1:0;
+ const tilt=GYRO.isActive(),useGpSteer=gp.connected&&Math.abs(gp.st)>0.001,useTilt=tilt&&kt===0&&!useGpSteer;
+ const br=Math.max((K.KeyS||K.ArrowDown||T_IN.br)?1:0,gp.br);
  return{
-  th:(K.KeyW||K.ArrowUp||T_IN.th||(tilt&&GYRO.autoGas&&!br))?1:0,
+  th:Math.max((K.KeyW||K.ArrowUp||T_IN.th||(tilt&&GYRO.autoGas&&br<.1))?1:0,gp.th),
   br,
-  st:useTilt?tiltAssist(pl,GYRO.steer):kt,
-  rate:useTilt?22:0,
-  hb:!!(K.Space||T_IN.hb)
+  st:useGpSteer?gp.st:useTilt?tiltAssist(pl,GYRO.steer):kt,
+  rate:useGpSteer?18:useTilt?22:0,
+  hb:!!(K.Space||T_IN.hb||gp.hb)
  }
 }
 const score=c=>c.done?1e9-order.indexOf(c):c.laps*N+c.idx;
@@ -1176,7 +1198,7 @@ function step(dt){
    if(!racing&&Math.floor(raceT*10)!==Math.floor((raceT-dt)*10))renderResults()}
   if(racing){
    const wrong=pl.vf>5&&Math.cos(dA(pl.a,T[pl.idx]))<-.4;wrongT=wrong?wrongT+dt:0;
-   if(wrongT>.8){$('msg').textContent=mobileUI?'Wrong way. Open Settings to reset':'Wrong way. Press R to reset';msgTimer=.1}
+   if(wrongT>.8){$('msg').textContent=GAMEPAD.state.connected?'Wrong way. Press Y to reset':mobileUI?'Wrong way. Open Settings to reset':'Wrong way. Press R to reset';msgTimer=.1}
    if(raceT>6)startLamps.forEach(l=>l.color.set(0x2a0505))}}
  if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)$('msg').textContent=''}}
 
@@ -1277,8 +1299,8 @@ addEventListener('keydown',e=>{
  if(e.code==='KeyC'&&driving())setCam(1-camMode);
  if(e.code==='KeyM')setMute(!muted)});
 addEventListener('keyup',e=>{K[e.code]=0;if(driving()&&e.code==='Space')e.preventDefault()});
-addEventListener('blur',()=>{for(const k in K)K[k]=0;clearTouch();GYRO.resetMotion()});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTouch();GYRO.resetMotion()}if(!AC)return;document.hidden?AC.suspend():AC.resume()});
+addEventListener('blur',()=>{for(const k in K)K[k]=0;clearTouch();GYRO.resetMotion();GAMEPAD.resetState()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTouch();GYRO.resetMotion();GAMEPAD.resetState()}if(!AC)return;document.hidden?AC.suspend():AC.resume()});
 function pick(i){
  selected=i;
  document.querySelectorAll('.lv button').forEach((b,k)=>{b.classList.toggle('on',k===i);b.setAttribute('aria-pressed',k===i)});
@@ -1489,6 +1511,172 @@ const GYRO=(()=>{
  return g;
 })();
 
+/* ================= GAMEPAD / CONSOLE SUPPORT ================= */
+/*GAMEPAD-MATH-START*/
+function gpAxisCurve(raw,deadzone=0.12,expo=1.35){
+ const v=Math.max(-1,Math.min(1,Number(raw)||0)),a=Math.abs(v);
+ if(a<=deadzone)return 0;
+ const n=(a-deadzone)/(1-deadzone);
+ return Math.sign(v)*Math.pow(n,expo);
+}
+function gpTriggerVal(btn,deadzone=0.05){
+ if(!btn)return 0;
+ const raw=typeof btn.value==='number'&&btn.value>0?btn.value:(btn.pressed?1:0);
+ if(raw<=deadzone)return 0;
+ return Math.min(1,(raw-deadzone)/(1-deadzone));
+}
+function gpReadState(gp){
+ const b=gp&&gp.buttons?gp.buttons:[],ax=gp&&gp.axes?gp.axes:[];
+ const pressed=i=>!!(b[i]&&(b[i].pressed||b[i].value>0.5));
+ const dLeft=pressed(14),dRight=pressed(15),dUp=pressed(12),dDown=pressed(13);
+ const stickX=gpAxisCurve(ax[0]||0),stickY=ax[1]||0;
+ const dSteer=(dRight?1:0)-(dLeft?1:0);
+ const st=stickX!==0?stickX:dSteer;
+ const rt=gpTriggerVal(b[7]),lt=gpTriggerVal(b[6]);
+ const confirm=pressed(0),back=pressed(1),hbBtn=pressed(2),reset=pressed(3);
+ const th=Math.max(rt,confirm?1:0);
+ return{
+  connected:!!(gp&&gp.connected),
+  st,th,br:lt,hb:back||hbBtn,
+  buttons:{
+   confirm,back,reset,
+   cam:pressed(4)||pressed(5),
+   mute:pressed(8),pause:pressed(9),
+   up:dUp||stickY<-0.55,down:dDown||stickY>0.55,
+   left:dLeft||ax[0]<-0.55,right:dRight||ax[0]>0.55
+  }
+ };
+}
+/*GAMEPAD-MATH-END*/
+const GAMEPAD=(()=>{
+ const STORE='apexGamepad';
+ const EMPTY={connected:false,st:0,th:0,br:0,hb:false,buttons:{confirm:false,back:false,reset:false,cam:false,mute:false,pause:false,up:false,down:false,left:false,right:false}};
+ let activeIndex=-1,prev={},navCd=0,rumbleCd=0,rumbleOn=true,lastId='';
+ try{const p=JSON.parse(localStorage.getItem(STORE)||'{}');if(typeof p.rumble==='boolean')rumbleOn=p.rumble}catch(_){}
+ function savePrefs(){try{localStorage.setItem(STORE,JSON.stringify({rumble:rumbleOn}))}catch(_){}}
+ function findPad(){
+  const list=navigator.getGamepads?navigator.getGamepads():[];
+  if(!list)return null;
+  if(activeIndex>=0&&list[activeIndex]&&list[activeIndex].connected)return list[activeIndex];
+  let fallback=null;
+  for(let i=0;i<list.length;i++){
+   const g=list[i];if(!g||!g.connected)continue;
+   if(g.mapping==='standard')return g;
+   if(!fallback)fallback=g;
+  }
+  return fallback;
+ }
+ function syncUI(gp){
+  const el=$('gpStatus'),hint=$('ctrlHint');
+  if(gp&&gp.connected){
+   const name=(gp.id||'Controller').replace(/\s*\(.*?\)\s*/g,' ').trim()||'Gamepad';
+   el.textContent='Connected: '+name;el.classList.add('on');
+   if(hint)hint.textContent='Controller ready: L-Stick/D-Pad steer, RT/A gas, LT brake/reverse, B/X drift, Y reset, LB/RB camera, Start pause.';
+  }else{
+   el.textContent='No controller detected. Press any button on your gamepad.';el.classList.remove('on');
+   if(hint)hint.textContent=mobileUI?'Tap Start Race for full-screen landscape play. Left/Right to steer, GAS / BRAKE pedals, DRIFT for handbrake.':'W A S D or arrow keys to drive. S brakes, then reverses. Space is the handbrake. R resets the car. C changes camera. M mutes.';
+  }
+  if($('gpRumble'))$('gpRumble').checked=rumbleOn;
+ }
+ function focusables(root){
+  return Array.from(root.querySelectorAll('button,input,select')).filter(e=>!e.disabled&&e.offsetParent!==null);
+ }
+ function moveFocus(root,dir){
+  const items=focusables(root);if(!items.length)return null;
+  const idx=items.indexOf(document.activeElement);
+  const next=idx<0?(dir>0?0:items.length-1):(idx+dir+items.length)%items.length;
+  items[next].focus();items[next].scrollIntoView({block:'nearest'});
+  return items[next];
+ }
+ function handleUI(btn,dt){
+  navCd=Math.max(0,navCd-dt);
+  const edge=k=>btn[k]&&!prev[k];
+  const rep=k=>btn[k]&&(!prev[k]||navCd<=0);
+  const settingsOpen=!$('settingsPanel').hidden;
+  if(settingsOpen){
+   const panel=$('settingsPanel');
+   if(edge('back')||edge('pause')){toggleSettings(false);return}
+   if(rep('up')){moveFocus(panel,-1);navCd=.22;return}
+   if(rep('down')){moveFocus(panel,1);navCd=.22;return}
+   const cur=document.activeElement;
+   if(rep('left')||rep('right')){
+    const d=btn.right?1:-1;
+    if(cur&&panel.contains(cur)&&cur.type==='range'){
+     cur.value=String(clamp(Number(cur.value)+d*(Number(cur.step)||1),Number(cur.min),Number(cur.max)));
+     cur.dispatchEvent(new Event('input',{bubbles:true}));
+    }else if(cur&&panel.contains(cur)&&cur.tagName==='SELECT'){
+     cur.selectedIndex=clamp(cur.selectedIndex+d,0,cur.options.length-1);
+     cur.dispatchEvent(new Event('change',{bubbles:true}));
+    }else moveFocus(panel,d);
+    navCd=.20;return;
+   }
+   if(edge('confirm')){
+    if(cur&&panel.contains(cur)){
+     if(cur.type==='checkbox'){cur.checked=!cur.checked;cur.dispatchEvent(new Event('change',{bubbles:true}))}
+     else if(cur.tagName==='BUTTON')cur.click();
+    }else moveFocus(panel,1);
+   }
+   return;
+  }
+  if(S==='menu'){
+   if(rep('left')){const n=(selected+CARS.length-1)%CARS.length;pick(n);$('b'+n).focus();navCd=.22}
+   else if(rep('right')){const n=(selected+1)%CARS.length;pick(n);$('b'+n).focus();navCd=.22}
+   else if(edge('confirm')||edge('pause'))startRace();
+   else if(edge('reset'))toggleSettings(true);
+   return;
+  }
+  if(S==='end'){
+   if(edge('confirm')||edge('pause'))$('homeBtn').click();
+   return;
+  }
+  if(driving()){
+   if(edge('pause'))toggleSettings(true);
+   else if(edge('cam'))setCam(1-camMode);
+   else if(edge('reset')&&S==='race'){respawn(pl);wrongT=0}
+   else if(edge('mute'))setMute(!muted);
+  }
+ }
+ const api={
+  state:Object.assign({},EMPTY),
+  rumble(weak,strong,ms=100){
+   if(!rumbleOn)return;
+   const gp=findPad();
+   const act=gp&&gp.vibrationActuator;
+   if(act&&typeof act.playEffect==='function'){
+    try{act.playEffect('dual-rumble',{startDelay:0,duration:ms,weakMagnitude:clamp(weak,0,1),strongMagnitude:clamp(strong,0,1)})}catch(_){}
+   }
+  },
+  resetState(){
+   api.state=Object.assign({},EMPTY);prev={};navCd=0;
+  },
+  poll(dt){
+   const gp=findPad();
+   if(!gp){
+    if(api.state.connected){activeIndex=-1;lastId='';api.resetState();syncUI(null)}
+    return;
+   }
+   activeIndex=gp.index;
+   const next=gpReadState(gp);
+   api.state=next;
+   if(gp.id!==lastId){lastId=gp.id;syncUI(gp)}
+   handleUI(next.buttons,dt);
+   prev=next.buttons;
+   if(S==='race'&&!paused&&pl&&!pl.onTrack&&pl.spd>10){
+    rumbleCd-=dt;if(rumbleCd<=0){rumbleCd=.14;api.rumble(.18*clamp(pl.spd/40,0,1),.08,110)}
+   }else rumbleCd=0;
+  },
+  setRumble(v){rumbleOn=!!v;savePrefs();syncUI(findPad())},
+  init(){
+   addEventListener('gamepadconnected',e=>{activeIndex=e.gamepad.index;lastId=e.gamepad.id;syncUI(e.gamepad)});
+   addEventListener('gamepaddisconnected',e=>{if(e.gamepad.index===activeIndex){activeIndex=-1;lastId='';api.resetState();syncUI(findPad())}});
+   if($('gpRumble')){$('gpRumble').checked=rumbleOn;$('gpRumble').onchange=e=>api.setRumble(e.target.checked)}
+   syncUI(findPad());
+  }
+ };
+ api.init();
+ return api;
+})();
+
 function syncSettingsUI(){
  const inRace=driving();
  $('settingsTitle').textContent=inRace?'Paused — Settings':'Settings';
@@ -1535,6 +1723,7 @@ function render(dt){
 let last=0,acc=0;const STEP=1/120;
 function frame(t){
  const dt=Math.min(.1,Math.max(0,(t-last)/1000)||0);last=t;
+ GAMEPAD.poll(dt);
  if(!paused){
   acc+=dt;while(acc>=STEP){step(STEP);acc-=STEP}
   for(const c of cars)syncModel(c,(S==='race'||S==='end')?dt:0);
