@@ -381,8 +381,162 @@ const APEX_MAPS = (() => {
     return added;
   }
 
+  // ---- Glacier builder ----------------------------------------------------
+  function buildGlacier(ctx) {
+    const { THREE, scene, track, tex, speckle, instanced, lam, disposeList, rand } = ctx;
+    const { P, N, T, CURV, WALL, clearOf } = track;
+    const added = [];
+
+    const snowTex = tex(256, 256, speckle('#eaf4fb', 2200, 'rgba(255,255,255,.45)', 'rgba(160,200,230,.25)', 3), 200, 200);
+    buildCommonTrack(ctx, {
+      groundTex: snowTex,
+      shoulderA: '#d4ebf7',
+      shoulderB: '#c3e0f2',
+      curbA: 0x7fd4ff,
+      curbB: 0xffffff,
+      wallOpts: { colorA: '#7fd4ff', colorB: '#ffffff', base: '#aad8f0', emissive: 0x102230 }
+    });
+
+    // Faceted translucent/specular icebergs
+    const iceMat = new THREE.MeshPhongMaterial({
+      color: 0x99dcff, specular: 0xffffff, shininess: 95, flatShading: true, transparent: true, opacity: 0.86
+    });
+    disposeList.push(iceMat);
+    const bergs = [];
+    let tries = 0;
+    while (bergs.length < 110 && tries++ < 2500) {
+      const x = -540 + rand() * 1080, z = -400 + rand() * 800, d = clearOf(x, z);
+      if (d < WALL + 12) continue;
+      const w = 6 + rand() * 14, h = 10 + rand() * 26;
+      bergs.push({ x, y: h * 0.35 - 1, z, sx: w, sy: h, sz: w * (0.8 + rand() * 0.5), r: rand() * 6.28 });
+    }
+    added.push(instanced(new THREE.IcosahedronGeometry(1, 0), iceMat, bergs, true));
+
+    // Glossy frozen-lake patches
+    const lakeMat = new THREE.MeshPhongMaterial({ color: 0xaee6ff, specular: 0xffffff, shininess: 140 });
+    disposeList.push(lakeMat);
+    for (let k = 0; k < 8; k++) {
+      const x = -420 + rand() * 840, z = -300 + rand() * 600, r = 18 + rand() * 24;
+      if (clearOf(x, z) < WALL + r + 8) continue;
+      const geo = new THREE.CircleGeometry(r, 18);
+      const mesh = new THREE.Mesh(geo, lakeMat);
+      mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, -0.02, z);
+      scene.add(mesh); added.push(mesh); disposeList.push(geo);
+    }
+
+    // 1-2 Ice tunnel arches over straight track sections
+    const archGeo = new THREE.CylinderGeometry(WALL + 1.5, WALL + 1.5, 24, 12, 1, true, 0, Math.PI);
+    const archMat = new THREE.MeshPhongMaterial({
+      color: 0xb8ebff, specular: 0xffffff, shininess: 100, flatShading: true, transparent: true, opacity: 0.68, side: THREE.DoubleSide
+    });
+    disposeList.push(archGeo, archMat);
+    for (const frac of [0.24, 0.64]) {
+      const idx = Math.floor(N * frac);
+      if (Math.abs(CURV[idx]) > 1 / 60) continue;
+      const p = P[idx], m = new THREE.Mesh(archGeo, archMat);
+      m.position.set(p[0], 0, p[1]);
+      m.rotation.order = 'YXZ';
+      m.rotation.y = -T[idx] + Math.PI / 2;
+      m.rotation.z = Math.PI / 2;
+      scene.add(m); added.push(m);
+    }
+
+    // Snow-dusted pines
+    const trunks = [], foliage = [], snowCap = [];
+    tries = 0;
+    while (trunks.length < 240 && tries++ < 3500) {
+      const x = -480 + rand() * 960, z = -360 + rand() * 720, d = clearOf(x, z);
+      if (d < WALL + 7 || (d > 110 && rand() < 0.5)) continue;
+      const s = 0.8 + rand() * 0.8;
+      trunks.push({ x, y: s, z, s });
+      foliage.push({ x, y: 3.6 * s, z, s, r: rand() * 6 });
+      snowCap.push({ x, y: 5.1 * s, z, s: s * 0.72, r: rand() * 6 });
+    }
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.25, 0.38, 2, 5), lam(0x4a3728), trunks, true),
+      instanced(new THREE.ConeGeometry(2.1, 4.2, 7), lam(0x1f4b3c), foliage, true),
+      instanced(new THREE.ConeGeometry(1.5, 2.2, 7), lam(0xeaf6ff), snowCap, false)
+    );
+    return added;
+  }
+
+  // ---- Volcano builder ----------------------------------------------------
+  function buildVolcano(ctx) {
+    const { THREE, scene, track, tex, instanced, lam, ribbon, disposeList, rand, onTick } = ctx;
+    const { N, WALL, clearOf } = track;
+    const added = [];
+
+    // Black basalt ground + emissive magma crack texture
+    const crackTex = tex(256, 256, (g, w, h) => {
+      g.fillStyle = '#181210'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = '#ff4800'; g.lineWidth = 2.2;
+      for (let i = 0; i < 24; i++) {
+        let x = rand() * w, y = rand() * h;
+        g.beginPath(); g.moveTo(x, y);
+        for (let k = 0; k < 5; k++) { x += (rand() - 0.5) * 60; y += (rand() - 0.5) * 60; g.lineTo(x, y); }
+        g.stroke();
+      }
+    }, 90, 90);
+    const groundMat = new THREE.MeshLambertMaterial({ map: crackTex, emissive: 0x330d00, emissiveMap: crackTex });
+
+    buildCommonTrack(ctx, {
+      groundMat,
+      curbA: 0xff5a1a,
+      curbB: 0x222222,
+      wallOpts: { colorA: '#ff5a1a', colorB: '#2a2220', base: '#3a2a26', emissive: 0x220a04 }
+    });
+
+    // Lava ribbons beside the track with animated UV scroll
+    const lavaTex = tex(128, 128, (g, w, h) => {
+      g.fillStyle = '#ff3800'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 120; i++) {
+        g.fillStyle = rand() < 0.5 ? '#ffaa00' : '#b81d00';
+        g.fillRect(rand() * w, rand() * h, 6 + rand() * 14, 4 + rand() * 10);
+      }
+    }, 1, 1);
+    const lavaMat = new THREE.MeshBasicMaterial({ map: lavaTex });
+    disposeList.push(lavaMat);
+    const lavaRib = ribbon(WALL + 3, WALL + 11, -0.02, { map: lavaTex, when: i => (i >> 4) % 2 === 0, layer: 1 });
+    lavaRib.material = lavaMat;
+    onTick(dt => { lavaTex.offset.x += dt * 0.16; lavaTex.offset.y += dt * 0.08; });
+
+    // Volcanic cones with glowing craters (1-2 point lights max)
+    const coneMat = lam(0x231b19), glowMat = new THREE.MeshBasicMaterial({ color: 0xff6600 });
+    disposeList.push(glowMat);
+    let lights = 0;
+    for (let k = 0; k < 4; k++) {
+      const ang = (k / 4) * Math.PI * 2 + 0.4, dist = 390 + rand() * 140;
+      const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+      if (clearOf(x, z) < WALL + 45) continue;
+      const h = 75 + rand() * 45, r = 55 + rand() * 25;
+      const cGeo = new THREE.CylinderGeometry(12, r, h, 10);
+      const cone = new THREE.Mesh(cGeo, coneMat);
+      cone.position.set(x, h / 2 - 2, z); scene.add(cone); added.push(cone); disposeList.push(cGeo);
+      const crGeo = new THREE.CircleGeometry(11, 10);
+      const crater = new THREE.Mesh(crGeo, glowMat);
+      crater.rotation.x = -Math.PI / 2; crater.position.set(x, h - 1.5, z);
+      scene.add(crater); added.push(crater); disposeList.push(crGeo);
+      if (lights < 2) {
+        const pl = new THREE.PointLight(0xff5500, 2.2, 220);
+        pl.position.set(x, h + 12, z); scene.add(pl); added.push(pl); lights++;
+      }
+    }
+
+    // Jagged basalt spires
+    const spires = [];
+    let tries = 0;
+    while (spires.length < 180 && tries++ < 3000) {
+      const x = -520 + rand() * 1040, z = -380 + rand() * 760, d = clearOf(x, z);
+      if (d < WALL + 8) continue;
+      const w = 1.5 + rand() * 4, h = 6 + rand() * 18;
+      spires.push({ x, y: h / 2 - 0.5, z, sx: w, sy: h, sz: w, r: rand() * 6.28 });
+    }
+    added.push(instanced(new THREE.ConeGeometry(1, 1, 5), lam(0x2b2220), spires, true));
+    return added;
+  }
+
   // ---- Env builder stubs --------------------------------------------------
-  const BUILDERS = { classic: buildClassic, city: buildCity, desert: buildDesert };
+  const BUILDERS = { classic: buildClassic, city: buildCity, desert: buildDesert, glacier: buildGlacier, volcano: buildVolcano };
   const stub = (id) => (ctx) => { buildCommonTrack(ctx); console.warn('[maps] biome props stub:', id); return []; };
   for (const m of LIST) m.buildEnv = BUILDERS[m.id] || stub(m.id);
 
