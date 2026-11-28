@@ -535,8 +535,160 @@ const APEX_MAPS = (() => {
     return added;
   }
 
+  // ---- Forest builder -----------------------------------------------------
+  function buildForest(ctx) {
+    const { THREE, scene, track, tex, speckle, instanced, box, lam, disposeList, rand } = ctx;
+    const { P, N, T, CURV, WALL, clearOf } = track;
+    const HORIZON = ctx.mapDef.sky.horizon;
+    const added = [];
+
+    const mossTex = tex(256, 256, speckle('#2f5a26', 2600, 'rgba(130,175,80,.18)', 'rgba(10,30,10,.22)', 3), 210, 210);
+    buildCommonTrack(ctx, {
+      groundTex: mossTex,
+      shoulderA: '#39692c',
+      shoulderB: '#2d5723',
+      curbA: 0x8a5a2b,
+      curbB: 0xd8c9a0,
+      wallOpts: { colorA: '#8a5a2b', colorB: '#d8c9a0', base: '#6b4a2a', emissive: 0x161008 }
+    });
+
+    // Rocky mountain backdrop ring
+    const mPos = [], mHs = [], mn = 64, mr = 740;
+    for (let i = 0; i < mn; i++) mHs.push(55 + rand() * 85);
+    for (let i = 0; i < mn; i++) {
+      const a = i / mn * Math.PI * 2, b = (i + 1) / mn * Math.PI * 2, j = (i + 1) % mn;
+      const A = [Math.cos(a) * mr, -2, Math.sin(a) * mr], B = [Math.cos(b) * mr, -2, Math.sin(b) * mr];
+      const C = [B[0], mHs[j], B[2]], D = [A[0], mHs[i], A[2]];
+      mPos.push(...A, ...B, ...C, ...A, ...C, ...D);
+    }
+    const mGeo = new THREE.BufferGeometry(); mGeo.setAttribute('position', new THREE.Float32BufferAttribute(mPos, 3));
+    const mMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x4b6254).lerp(new THREE.Color(HORIZON), 0.3), side: THREE.DoubleSide, fog: false });
+    const mMesh = new THREE.Mesh(mGeo, mMat); scene.add(mMesh); added.push(mMesh); disposeList.push(mGeo, mMat);
+
+    // Two instanced tree species: pines + rounded deciduous canopies
+    const pTrunks = [], pCones = [], dTrunks = [], dCrowns = [];
+    const pineCols = [0x214d20, 0x2b5f27, 0x1a3e1c];
+    const decCols = [0x437a2e, 0x598f32, 0x7c8a2a, 0x3b6e28];
+    let tries = 0;
+    while (pTrunks.length + dTrunks.length < 720 && tries++ < 6000) {
+      const x = -500 + rand() * 1000, z = -380 + rand() * 760, d = clearOf(x, z);
+      if (d < WALL + 6 || (d > 100 && rand() < 0.45)) continue;
+      if (d < WALL + 20 && Math.abs(x - P[0][0]) < 75 && Math.abs(z - P[0][1]) < 35) continue;
+      const s = 0.8 + rand() * 0.9, r = rand() * 6.28;
+      if (rand() < 0.62) {
+        pTrunks.push({ x, y: s * 1.4, z, s });
+        pCones.push({ x, y: s * 4.5, z, s, r, c: pineCols[Math.floor(rand() * pineCols.length)] });
+      } else {
+        dTrunks.push({ x, y: s * 1.2, z, s });
+        dCrowns.push({ x, y: s * 4.1, z, sx: s * 1.2, sy: s * 1.0, sz: s * 1.2, r, c: decCols[Math.floor(rand() * decCols.length)] });
+      }
+    }
+    const trunkMat = lam(0x5c3e24), leafMat = lam(0xffffff);
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.26, 0.42, 2.8, 5), trunkMat, pTrunks, true),
+      instanced(new THREE.ConeGeometry(2.3, 4.8, 7), leafMat, pCones, true),
+      instanced(new THREE.CylinderGeometry(0.3, 0.48, 2.4, 5), trunkMat, dTrunks, true),
+      instanced(new THREE.DodecahedronGeometry(2.1, 1), leafMat, dCrowns, true)
+    );
+
+    // 1-2 Timber bridge structures over straight track sections
+    const woodMat = lam(0x6e4726), railMat = lam(0x4d3119);
+    for (const frac of [0.26, 0.66]) {
+      const idx = Math.floor(N * frac);
+      if (Math.abs(CURV[idx]) > 1 / 60) continue;
+      const p = P[idx], g = new THREE.Group();
+      g.position.set(p[0], 0, p[1]); g.rotation.y = -T[idx];
+      scene.add(g); added.push(g);
+      box(4.4, 0.7, WALL * 2 + 12, woodMat, 0, 7.6, 0, g);
+      box(0.35, 1.1, WALL * 2 + 12, railMat, -2.0, 8.4, 0, g);
+      box(0.35, 1.1, WALL * 2 + 12, railMat, 2.0, 8.4, 0, g);
+      for (const s of [-1, 1]) {
+        box(1.1, 7.6, 1.1, railMat, 0, 3.8, s * (WALL + 3.5), g);
+      }
+    }
+
+    // Warm mist / sunbeam shafts
+    const beamGeo = new THREE.ConeGeometry(7, 32, 8, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff0b8, transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide });
+    disposeList.push(beamGeo, beamMat);
+    for (let k = 0; k < 5; k++) {
+      const idx = Math.floor(N * (0.12 + k * 0.19));
+      const p = P[idx], b = new THREE.Mesh(beamGeo, beamMat);
+      b.position.set(p[0], 14, p[1]); b.rotation.z = -0.35;
+      scene.add(b); added.push(b);
+    }
+    return added;
+  }
+
+  // ---- Jungle builder -----------------------------------------------------
+  function buildJungle(ctx) {
+    const { THREE, scene, track, tex, speckle, instanced, box, lam, ribbon, disposeList, rand, onTick } = ctx;
+    const { P, N, T, NR, WALL, at, clearOf } = track;
+    const added = [];
+
+    const jgTex = tex(256, 256, speckle('#14502a', 2600, 'rgba(70,170,80,.2)', 'rgba(5,25,10,.25)', 3), 200, 200);
+    buildCommonTrack(ctx, {
+      groundTex: jgTex,
+      shoulderA: '#1b5e30',
+      shoulderB: '#144c26',
+      curbA: 0xffd23a,
+      curbB: 0x1b6b2a,
+      wallOpts: { colorA: '#ffd23a', colorB: '#1b6b2a', base: '#3d4f32', emissive: 0x0a140a }
+    });
+
+    // Turquoise river ribbon beside a section of the track + cliffside waterfall
+    const waterTex = tex(128, 128, (g, w, h) => {
+      g.fillStyle = '#1ca8b8'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 90; i++) {
+        g.fillStyle = rand() < 0.45 ? 'rgba(220,255,255,.45)' : 'rgba(10,110,130,.35)';
+        g.fillRect(rand() * w, rand() * h, 4 + rand() * 8, 12 + rand() * 20);
+      }
+    }, 2, 2);
+    const wMat = new THREE.MeshLambertMaterial({ map: waterTex, emissive: 0x0a3844 });
+    disposeList.push(wMat);
+    const river = ribbon(WALL + 3, WALL + 13, -0.02, { map: waterTex, when: i => i > Math.floor(N * 0.16) && i < Math.floor(N * 0.42), layer: 1 });
+    river.material = wMat;
+    onTick(dt => { waterTex.offset.y -= dt * 0.45; });
+
+    // Cliff wall with scrolling waterfall
+    const wfIdx = Math.floor(N * 0.29), wfPos = at(wfIdx, WALL + 24);
+    if (clearOf(wfPos[0], wfPos[1]) >= WALL + 16) {
+      const cg = new THREE.Group(); cg.position.set(wfPos[0], 0, wfPos[1]); cg.rotation.y = -T[wfIdx];
+      scene.add(cg); added.push(cg);
+      box(34, 30, 14, lam(0x3e443c), 0, 15, 0, cg);
+      const wfGeo = new THREE.PlaneGeometry(10, 28);
+      const wfMesh = new THREE.Mesh(wfGeo, wMat);
+      wfMesh.position.set(0, 14, -7.2); wfMesh.rotation.y = Math.PI;
+      cg.add(wfMesh); disposeList.push(wfGeo);
+    }
+
+    // Curved-trunk palms + giant fern / monstera clusters
+    const pTrunks = [], pFronds = [], ferns = [];
+    let tries = 0;
+    while (pTrunks.length < 320 && tries++ < 4500) {
+      const x = -480 + rand() * 960, z = -380 + rand() * 760, d = clearOf(x, z);
+      if (d < WALL + 6 || (d > 110 && rand() < 0.45)) continue;
+      const s = 0.85 + rand() * 0.85, r = rand() * 6.28;
+      pTrunks.push({ x, y: 3.4 * s, z, s, r });
+      pFronds.push({ x: x + Math.cos(r) * 0.4 * s, y: 6.8 * s, z: z + Math.sin(r) * 0.4 * s, sx: s * 1.4, sy: s * 0.55, sz: s * 1.4, r });
+    }
+    tries = 0;
+    while (ferns.length < 280 && tries++ < 3500) {
+      const x = -480 + rand() * 960, z = -380 + rand() * 760, d = clearOf(x, z);
+      if (d < WALL + 4.5 || d > 85) continue;
+      const s = 0.9 + rand() * 1.3;
+      ferns.push({ x, y: 0.7 * s, z, sx: s * 1.5, sy: s * 0.55, sz: s * 1.5, r: rand() * 6.28, c: rand() < 0.5 ? 0x1b7a34 : 0x2a9442 });
+    }
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.18, 0.34, 7, 6), lam(0x6b4c30), pTrunks, true),
+      instanced(new THREE.ConeGeometry(2.8, 1.4, 7), lam(0x278a3a), pFronds, true),
+      instanced(new THREE.IcosahedronGeometry(1.5, 0), lam(0xffffff), ferns, false)
+    );
+    return added;
+  }
+
   // ---- Env builder stubs --------------------------------------------------
-  const BUILDERS = { classic: buildClassic, city: buildCity, desert: buildDesert, glacier: buildGlacier, volcano: buildVolcano };
+  const BUILDERS = { classic: buildClassic, city: buildCity, desert: buildDesert, glacier: buildGlacier, volcano: buildVolcano, forest: buildForest, jungle: buildJungle };
   const stub = (id) => (ctx) => { buildCommonTrack(ctx); console.warn('[maps] biome props stub:', id); return []; };
   for (const m of LIST) m.buildEnv = BUILDERS[m.id] || stub(m.id);
 
