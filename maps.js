@@ -216,9 +216,175 @@ const APEX_MAPS = (() => {
     return added;
   }
 
+  // ---- City builder -------------------------------------------------------
+  function buildCity(ctx) {
+    const { THREE, scene, track, tex, instanced, box, lam, disposeList, rand } = ctx;
+    const { P, N, T, NR, CURV, WALL, at, clearOf } = track;
+    const added = [];
+
+    buildCommonTrack(ctx, {
+      curbA: 0x00e5ff,
+      curbB: 0xff2bd6,
+      edgeLine: 0x88ccff,
+      dashLine: 0x667799,
+      wallOpts: { colorA: '#00e5ff', colorB: '#ff2bd6', base: '#2b2d38', emissive: 0x0d1020 },
+      gantryOpts: { steel: 0x1c2030 }
+    });
+
+    // Procedural lit-window skyscraper texture
+    const winTex = tex(128, 256, (g, w, h) => {
+      g.fillStyle = '#0e111a'; g.fillRect(0, 0, w, h);
+      const cols = ['#ffe699', '#88e8ff', '#ff88dd', '#ffffff'];
+      for (let y = 8; y < h - 8; y += 12) {
+        for (let x = 6; x < w - 6; x += 10) {
+          if (rand() < 0.42) {
+            g.fillStyle = cols[Math.floor(rand() * cols.length)];
+            g.fillRect(x, y, 5, 7);
+          }
+        }
+      }
+    });
+    const bMat = new THREE.MeshLambertMaterial({ map: winTex, emissive: 0x222a44, emissiveMap: winTex });
+    disposeList.push(bMat);
+
+    // Instanced skyscrapers
+    const bldgs = [];
+    let tries = 0;
+    while (bldgs.length < 180 && tries++ < 3500) {
+      const x = -560 + rand() * 1120, z = -420 + rand() * 840;
+      const d = clearOf(x, z);
+      if (d < WALL + 16) continue;
+      const w = 14 + rand() * 18, dp = 14 + rand() * 18, h = 30 + rand() * 105;
+      bldgs.push({ x, y: h / 2 - 0.1, z, sx: w, sy: h, sz: dp, r: Math.floor(rand() * 4) * Math.PI / 2 });
+    }
+    added.push(instanced(new THREE.BoxGeometry(1, 1, 1), bMat, bldgs, false));
+
+    // Elevated highway overpass slabs spanning the track (2-3)
+    const deckMat = lam(0x252834), railMat = lam(0x3a4052);
+    let overpasses = 0;
+    for (const frac of [0.22, 0.54, 0.80]) {
+      if (overpasses >= 3) break;
+      const idx = Math.floor(N * frac);
+      if (Math.abs(CURV[idx]) > 1 / 70) continue;
+      const p = P[idx], a = T[idx];
+      const g = new THREE.Group(); g.position.set(p[0], 0, p[1]); g.rotation.y = -a;
+      scene.add(g); added.push(g);
+      box(11, 1.1, WALL * 2 + 26, deckMat, 0, 8.6, 0, g);
+      box(0.5, 0.9, WALL * 2 + 26, railMat, -5.2, 9.6, 0, g);
+      box(0.5, 0.9, WALL * 2 + 26, railMat, 5.2, 9.6, 0, g);
+      for (const s of [-1, 1]) {
+        box(2.2, 8.5, 2.2, railMat, 0, 4.25, s * (WALL + 6), g);
+      }
+      overpasses++;
+    }
+
+    // Neon billboards & streetlamps
+    const poles = [], lamps = [], neonCols = [0x00e5ff, 0xff2bd6, 0xffaa00];
+    for (let i = 8, k = 0; i < N; i += 14, k++) {
+      const s = k % 2 ? 1 : -1, p = at(i, s * (WALL + 1.5));
+      if (clearOf(p[0], p[1]) < WALL + 1) continue;
+      const dx = -NR[i][0] * s, dz = -NR[i][1] * s, r = Math.atan2(-dz, dx);
+      poles.push({ x: p[0], y: 4.5, z: p[1] });
+      lamps.push({ x: p[0] + dx * 2.1, y: 8.9, z: p[1] + dz * 2.1, r, c: neonCols[k % 3] });
+      if (k % 5 === 0) {
+        const bp = at(i, s * (WALL + 5));
+        if (clearOf(bp[0], bp[1]) >= WALL + 4) {
+          const bg = new THREE.Group(); bg.position.set(bp[0], 0, bp[1]); bg.rotation.y = -T[i];
+          scene.add(bg); added.push(bg);
+          box(0.5, 6, 0.5, railMat, 0, 3, 0, bg);
+          const nCol = neonCols[(k / 5) % 3 | 0];
+          const bMesh = box(0.3, 3.2, 7.5, new THREE.MeshBasicMaterial({ color: nCol }), 0, 6.2, 0, bg, false);
+          disposeList.push(bMesh.material);
+        }
+      }
+    }
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.14, 0.2, 9, 6), lam(0x2f3444), poles, false),
+      instanced(new THREE.BoxGeometry(1.4, 0.25, 0.5), new THREE.MeshBasicMaterial({ color: 0xffffff }), lamps, false)
+    );
+    return added;
+  }
+
+  // ---- Desert builder -----------------------------------------------------
+  function buildDesert(ctx) {
+    const { THREE, scene, track, tex, speckle, instanced, box, lam, disposeList, rand } = ctx;
+    const { P, N, T, CURV, WALL, clearOf } = track;
+    const added = [];
+
+    const sandTex = tex(256, 256, speckle('#d9a35b', 2800, 'rgba(255,235,190,.22)', 'rgba(130,75,25,.20)', 3), 200, 200);
+    buildCommonTrack(ctx, {
+      groundTex: sandTex,
+      shoulderA: '#cfa05e',
+      shoulderB: '#c5924f',
+      curbA: 0xb5522a,
+      curbB: 0xe8d9b0,
+      wallOpts: { colorA: '#b5522a', colorB: '#e8d9b0', base: '#c7a06a', emissive: 0x221508 }
+    });
+
+    // Layered red-orange mesas / buttes
+    const mesaCols = [0xc85a32, 0xa84422, 0xd97342];
+    const mesaMats = mesaCols.map(c => lam(c));
+    for (let m = 0; m < 16; m++) {
+      const ang = (m / 16) * Math.PI * 2 + rand() * 0.25;
+      const dist = 360 + rand() * 280;
+      const x = Math.cos(ang) * dist, z = Math.sin(ang) * dist;
+      if (clearOf(x, z) < WALL + 28) continue;
+      const g = new THREE.Group(); g.position.set(x, 0, z); scene.add(g); added.push(g);
+      const r0 = 28 + rand() * 26, h0 = 16 + rand() * 14;
+      for (let tier = 0; tier < 3; tier++) {
+        const geo = new THREE.CylinderGeometry(r0 * (0.78 - tier * 0.2), r0 * (1 - tier * 0.2), h0 * 0.45, 8);
+        const mesh = new THREE.Mesh(geo, mesaMats[tier]);
+        mesh.position.y = tier * h0 * 0.4 + h0 * 0.22 - 1;
+        mesh.rotation.y = rand() * Math.PI;
+        g.add(mesh); disposeList.push(geo);
+      }
+    }
+
+    // 1-2 Sandstone rock arches spanning near/over the track
+    const archMat = lam(0xb85b33);
+    for (const frac of [0.28, 0.72]) {
+      const idx = Math.floor(N * frac);
+      if (Math.abs(CURV[idx]) > 1 / 60) continue;
+      const p = P[idx], g = new THREE.Group();
+      g.position.set(p[0], 0, p[1]); g.rotation.y = -T[idx];
+      scene.add(g); added.push(g);
+      for (const s of [-1, 1]) {
+        box(5.5, 11, 5.5, archMat, 0, 5.5, s * (WALL + 4.5), g);
+        box(4.5, 4, 6.5, archMat, 0, 11.5, s * (WALL + 1.5), g);
+      }
+      box(4.8, 3.4, WALL * 2 + 6, archMat, 0, 13.5, 0, g);
+    }
+
+    // Instanced saguaro cacti + boulders
+    const cacti = [], arms = [], boulders = [];
+    let tries = 0;
+    while (cacti.length < 220 && tries++ < 3500) {
+      const x = -540 + rand() * 1080, z = -400 + rand() * 800, d = clearOf(x, z);
+      if (d < WALL + 6) continue;
+      const s = 0.8 + rand() * 0.9, r = rand() * 6.28;
+      cacti.push({ x, y: 2.1 * s, z, s, r });
+      arms.push({ x: x + Math.cos(r) * 0.55 * s, y: 2.4 * s, z: z + Math.sin(r) * 0.55 * s, s, r });
+    }
+    tries = 0;
+    while (boulders.length < 150 && tries++ < 2500) {
+      const x = -540 + rand() * 1080, z = -400 + rand() * 800, d = clearOf(x, z);
+      if (d < WALL + 7) continue;
+      const s = 1.2 + rand() * 3.5;
+      boulders.push({ x, y: s * 0.4, z, sx: s * 1.3, sy: s * 0.8, sz: s, r: rand() * 6.28 });
+    }
+    const cacMat = lam(0x3b6e34), bldMat = lam(0xa8643a);
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.32, 0.38, 4.2, 6), cacMat, cacti, true),
+      instanced(new THREE.CylinderGeometry(0.22, 0.24, 1.8, 5), cacMat, arms, false),
+      instanced(new THREE.DodecahedronGeometry(1, 0), bldMat, boulders, true)
+    );
+    return added;
+  }
+
   // ---- Env builder stubs --------------------------------------------------
+  const BUILDERS = { classic: buildClassic, city: buildCity, desert: buildDesert };
   const stub = (id) => (ctx) => { buildCommonTrack(ctx); console.warn('[maps] biome props stub:', id); return []; };
-  for (const m of LIST) m.buildEnv = m.id === 'classic' ? buildClassic : stub(m.id);
+  for (const m of LIST) m.buildEnv = BUILDERS[m.id] || stub(m.id);
 
   // ---- Weather particles (final) ------------------------------------------
   const MAX_WEATHER = 600, BOX = 90; // camera-relative volume half-size
