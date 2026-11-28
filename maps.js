@@ -27,7 +27,7 @@ const APEX_MAPS = (() => {
       difficulty: 'Easy', weatherLabel: 'Clear', cp: CLASSIC_CP, sc: 0.28, ox: 1600, oy: 1030,
       sky: { horizon: 0xbfd8ee, top: 0x4a8fd8, sunColor: 0xfff2d0, sunDir: [-0.5, 0.8, -0.3], sunIntensity: 1.2,
              hemiSky: 0xcfe6ff, hemiGround: 0x4a6b3a, hemiIntensity: 0.6, ambientIntensity: 0.3, fogNear: 200, fogFar: 900, nightMode: false },
-      ground: { base: 0x3f7d36, particle: [90, 130, 60], road: 0x2a2a2e, curb: [0xd22, 0xfff], barrier: 0xcccccc },
+      ground: { base: 0x3f7d36, particle: [90, 130, 60], road: 0x2a2a2e, curb: [0xd61f1f, 0xf4f4f4], barrier: 0xcccccc },
       weather: { type: 'none', count: 0, color: 0xffffff, size: 1, speed: 0 } },
 
     { id: 'city', name: 'City', desc: 'Neon skyline, overpasses and glowing billboards.',
@@ -87,11 +87,138 @@ const APEX_MAPS = (() => {
       weather: { type: 'none', count: 0, color: 0xffffff, size: 1, speed: 0 } },
   ];
 
-  // ---- Env builder stubs: implement per MAPS_HANDOFF.md ----------------------
-  // Contract: buildX(ctx) returns an array of THREE.Object3D added to ctx.scene.
-  // Register every geometry/material/texture via ctx.disposeList.push(...).
-  const stub = (id) => (ctx) => { console.warn('[maps] builder not implemented:', id); return []; };
-  for (const m of LIST) m.buildEnv = stub(m.id);
+  // ---- Shared track surface & furniture helper ----------------------------
+  function buildCommonTrack(ctx, opts = {}) {
+    const { THREE, scene, track, tex, speckle, lam, ribbon, wall, gantry, brakingBoards, disposeList, mapDef } = ctx;
+    const { N, HW, WALL, CURB, GRAVEL } = track;
+    const gCol = '#' + mapDef.ground.base.toString(16).padStart(6, '0');
+    const rCol = '#' + mapDef.ground.road.toString(16).padStart(6, '0');
+    const cA = '#' + (opts.curbA !== undefined ? opts.curbA : mapDef.ground.curb[0]).toString(16).padStart(6, '0');
+    const cB = '#' + (opts.curbB !== undefined ? opts.curbB : mapDef.ground.curb[1]).toString(16).padStart(6, '0');
+
+    const groundTex = opts.groundTex || tex(256, 256, speckle(gCol, 2200, 'rgba(255,255,255,.10)', 'rgba(0,0,0,.16)', 3), 220, 220);
+    const tarTex = tex(256, 256, speckle(rCol, 5200, 'rgba(255,255,255,.08)', 'rgba(0,0,0,.22)', 2), 1, 1);
+
+    const gMat = opts.groundMat || new THREE.MeshLambertMaterial({ map: groundTex });
+    const gGeo = new THREE.PlaneGeometry(2400, 2400);
+    const ground = new THREE.Mesh(gGeo, gMat);
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.06; ground.receiveShadow = true;
+    scene.add(ground);
+    disposeList.push(gGeo, gMat);
+
+    const shoulderA = opts.shoulderA || gCol;
+    const shoulderB = opts.shoulderB || gCol;
+    if (opts.shoulderA) ribbon(-WALL, WALL, -0.02, { color: i => (i >> 2) % 2 ? shoulderA : shoulderB, layer: 1 });
+    if (opts.runoffTex) {
+      for (const s of [-1, 1]) ribbon(s * (HW + CURB), s * (WALL - 0.2), 0.0, { map: opts.runoffTex, when: i => GRAVEL[i] === s, layer: 2 });
+    }
+    ribbon(-HW, HW, 0.02, { map: tarTex, layer: 3 });
+    ribbon(-3.4, 3.4, 0.024, { tint: 0x000000, opacity: 0.1, layer: 4 });
+    for (const s of [-1, 1]) {
+      ribbon(s * (HW - 0.45), s * (HW - 0.1), 0.03, { tint: opts.edgeLine || 0xf2f2f2, layer: 5 });
+      ribbon(s * HW, s * (HW + CURB), 0.045, { sub: 2, color: i => i % 2 ? cB : cA, layer: 6 });
+    }
+    ribbon(-0.09, 0.09, 0.03, { tint: opts.dashLine || 0xaab0ba, when: i => i % 3 === 0, layer: 5 });
+
+    wall(1, opts.wallOpts);
+    wall(-1, opts.wallOpts);
+    gantry(opts.gantryOpts);
+    brakingBoards();
+    return [ground];
+  }
+
+  // ---- Classic builder (exact original countryside circuit) ---------------
+  function buildClassic(ctx) {
+    const { THREE, scene, track, tex, speckle, instanced, box, lam, ribbon, wall, gantry, brakingBoards, disposeList, rand } = ctx;
+    const { P, N, T, NR, GRAVEL, HW, CURB, WALL, at, clearOf } = track;
+    const HORIZON = ctx.mapDef.sky.horizon;
+    const added = [];
+
+    // Distant hills ring on the horizon.
+    for (const [r, h, col] of [[820, 70, 0x6f93a8], [640, 40, 0x56805f]]) {
+      const n = 96, pos = [], hs = [];
+      for (let i = 0; i < n; i++) hs.push(h * (0.35 + rand() * 0.65));
+      for (let i = 0; i < n; i++) {
+        const a = i / n * Math.PI * 2, b = (i + 1) / n * Math.PI * 2, j = (i + 1) % n;
+        const A = [Math.cos(a) * r, -2, Math.sin(a) * r], B = [Math.cos(b) * r, -2, Math.sin(b) * r], C = [B[0], hs[j], B[2]], D = [A[0], hs[i], A[2]];
+        pos.push(...A, ...B, ...C, ...A, ...C, ...D);
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(col).lerp(new THREE.Color(HORIZON), 0.35), side: THREE.DoubleSide, fog: false });
+      const mesh = new THREE.Mesh(g, m); scene.add(mesh); added.push(mesh); disposeList.push(g, m);
+    }
+
+    const grassTex = tex(256, 256, speckle('#3f7a35', 2600, 'rgba(180,220,110,.16)', 'rgba(0,30,0,.18)', 3), 220, 220);
+    const gravTex = tex(128, 128, speckle('#b39a6c', 1500, 'rgba(255,240,200,.35)', 'rgba(60,40,15,.35)', 3), 1, 1);
+
+    buildCommonTrack(ctx, {
+      groundTex: grassTex,
+      runoffTex: gravTex,
+      shoulderA: '#4d8c3d',
+      shoulderB: '#427d36',
+      curbA: 0xd61f1f,
+      curbB: 0xf4f4f4
+    });
+
+    // Grandstands with instanced crowd
+    const crowd = [], colors = [0xe33b3b, 0xffc83d, 0x3d7bff, 0xffffff, 0x2fc28a, 0xff8000, 0x9b6bff, 0x20242c];
+    const base = lam(0x8c929c), roof = lam(0xd8262f), post = lam(0x3a3f47), placed = [];
+    for (const [idx, side] of [[6, 1], [18, 1], [N - 12, 1], [6, -1], [N - 12, -1], [30, 1], [Math.floor(N * 0.17), -1], [Math.floor(N * 0.33), -1], [Math.floor(N * 0.5), 1], [Math.floor(N * 0.66), 1], [Math.floor(N * 0.82), -1]]) {
+      const i = ((idx % N) + N) % N, c = at(i, side * (WALL + 8.5)), a = T[i], fx = Math.cos(a), fz = Math.sin(a), nx = NR[i][0] * side, nz = NR[i][1] * side;
+      let ok = true;
+      for (let u = -20; u <= 20; u += 5) for (let v = -4.5; v <= 4.5; v += 4.5) if (clearOf(c[0] + fx * u * 0.5 + nx * v, c[1] + fz * u * 0.5 + nz * v) < WALL + 2.5) ok = false;
+      if (!ok || placed.some(q => Math.hypot(q[0] - c[0], q[1] - c[1]) < 22)) continue;
+      placed.push(c);
+      const g = new THREE.Group(); g.position.set(c[0], 0, c[1]); g.rotation.y = -a; scene.add(g); added.push(g);
+      for (let r = 0; r < 5; r++) {
+        box(20, 0.8 + r * 0.9, 1.5, base, 0, (0.8 + r * 0.9) / 2, side * (-3.2 + r * 1.5), g);
+        for (let k = 0; k < 26; k++) {
+          if (rand() < 0.14) continue;
+          const u = -9.6 + k * 0.77 + rand() * 0.2, v = -3.2 + r * 1.5, y = 0.8 + r * 0.9 + 0.38;
+          crowd.push({ x: c[0] + fx * u + nx * v, y, z: c[1] + fz * u + nz * v, r: -a, c: colors[Math.floor(rand() * colors.length)] });
+        }
+      }
+      for (const u of [-9.6, 0, 9.6]) box(0.25, 8, 0.25, post, u, 4, side * 4.4, g);
+      box(21, 0.3, 9, roof, 0, 8, side * 0.5, g);
+    }
+    added.push(instanced(new THREE.BoxGeometry(0.45, 0.75, 0.45), lam(0xffffff), crowd, false));
+
+    // Light poles
+    const poles = [], arms = [], lamps = [];
+    for (let i = 5, k = 0; i < N; i += 11, k++) {
+      const s = k % 2 ? 1 : -1, p = at(i, s * (WALL + 1.4)); if (clearOf(p[0], p[1]) < WALL + 1) continue;
+      const dx = -NR[i][0] * s, dz = -NR[i][1] * s, r = Math.atan2(-dz, dx);
+      poles.push({ x: p[0], y: 5, z: p[1] }); arms.push({ x: p[0] + dx * 1.3, y: 9.9, z: p[1] + dz * 1.3, r }); lamps.push({ x: p[0] + dx * 2.6, y: 9.75, z: p[1] + dz * 2.6, r });
+    }
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.13, 0.2, 10, 6), lam(0x565d68), poles, true),
+      instanced(new THREE.BoxGeometry(2.8, 0.14, 0.14), lam(0x565d68), arms, false),
+      instanced(new THREE.BoxGeometry(0.8, 0.2, 0.5), lam(0xfff6d0, 0x77704a), lamps, false)
+    );
+
+    // Trees
+    const trunk = [], leafA = [], leafB = [], greens = [0x2f6b2c, 0x3b7a2e, 0x25592a, 0x4a8434];
+    let tries = 0;
+    while (trunk.length < 850 && tries++ < 7000) {
+      const x = -470 + rand() * 940, z = -360 + rand() * 720, d = clearOf(x, z);
+      if (d < WALL + 5 || (d > 90 && rand() < 0.55)) continue;
+      if (d < WALL + 22 && Math.abs(x - P[0][0]) < 80 && Math.abs(z - P[0][1]) < 40) continue;
+      const s = 0.75 + rand() * 0.8, c = greens[Math.floor(rand() * 4)], r = rand() * 6;
+      trunk.push({ x, y: 1 * s, z, s }); leafA.push({ x, y: 3.6 * s, z, s, r, c }); leafB.push({ x, y: 5.6 * s, z, s, r, c });
+    }
+    const lm = new THREE.MeshPhongMaterial({ color: 0xffffff, flatShading: true, shininess: 0, specular: 0x000000 });
+    disposeList.push(lm);
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.28, 0.4, 2, 5), lam(0x6a4a2c), trunk, true),
+      instanced(new THREE.ConeGeometry(2.3, 3.8, 7), lm, leafA, true),
+      instanced(new THREE.ConeGeometry(1.6, 3.2, 7), lm, leafB, true)
+    );
+    return added;
+  }
+
+  // ---- Env builder stubs --------------------------------------------------
+  const stub = (id) => (ctx) => { buildCommonTrack(ctx); console.warn('[maps] biome props stub:', id); return []; };
+  for (const m of LIST) m.buildEnv = m.id === 'classic' ? buildClassic : stub(m.id);
 
   // ---- Weather particles (final) ------------------------------------------
   const MAX_WEATHER = 600, BOX = 90; // camera-relative volume half-size
