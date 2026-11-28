@@ -561,7 +561,90 @@ function wheel(r, w, side, o) {
   return { spin, cal };
 }
 
-/* ---------- shared chassis: wheels, wheel-arch pods, seats, driver, mirrors ---------- */
+/* ---------- profile-driven body toolkit (smooth polylines, 8-pt loft, wheel-arch cuts) ---------- */
+function evalProfile(pts, x) {
+  const n = pts.length;
+  if (x <= pts[0][0]) return pts[0][1];
+  if (x >= pts[n - 1][0]) return pts[n - 1][1];
+  let i = 0;
+  while (i < n - 2 && x > pts[i + 1][0]) i++;
+  const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
+  const dx = p2[0] - p1[0];
+  if (dx <= 1e-6) return p1[1];
+  const t = (x - p1[0]) / dx, t2 = t * t, t3 = t2 * t;
+  const m1 = i === 0 ? (p2[1] - p1[1]) / dx : (p2[1] - p0[1]) / (p2[0] - p0[0]);
+  const m2 = i + 1 === n - 1 ? (p2[1] - p1[1]) / dx : (p3[1] - p1[1]) / (p3[0] - p1[0]);
+  return (2 * t3 - 3 * t2 + 1) * p1[1] + (t3 - 2 * t2 + t) * dx * m1 + (-2 * t3 + 3 * t2) * p2[1] + (t3 - t2) * dx * m2;
+}
+function profileSamples(x0, x1, step, arches) {
+  const xs = [], addX = v => { if (v >= x0 - 1e-5 && v <= x1 + 1e-5) xs.push(Math.max(x0, Math.min(x1, v))); };
+  for (let x = x0; x < x1 - 1e-4; x += step) addX(x);
+  addX(x1);
+  if (arches) for (const [ax, r] of arches) {
+    const ar = r + .1;
+    for (const k of [-1, -.78, -.48, 0, .48, .78, 1]) addX(ax + k * ar);
+  }
+  xs.sort((a, b) => a - b);
+  return xs.filter((v, i) => i === 0 || v - xs[i - 1] > .018);
+}
+function loft8(secs, mat) {
+  const pos = [], ring = s => {
+    const [x, w, y0, y1, tw = w * .62, sh = .74] = s, h = y1 - y0;
+    const yL = y0 + h * .3, yS = y0 + h * sh, ws = w * .52 + tw * .48;
+    return [
+      [x, y0, -w * .82], [x, yL, -w * .99], [x, yS, -ws], [x, y1, -tw],
+      [x, y1, tw], [x, yS, ws], [x, yL, w * .99], [x, y0, w * .82]
+    ];
+  };
+  const R = secs.map(ring), tri = (a, b, c) => pos.push(...a, ...b, ...c);
+  for (let i = 0; i < R.length - 1; i++) for (let k = 0; k < 8; k++) {
+    const j = (k + 1) % 8;
+    tri(R[i][k], R[i + 1][k], R[i + 1][j]);
+    tri(R[i][k], R[i + 1][j], R[i][j]);
+  }
+  for (let k = 1; k < 7; k++) {
+    tri(R[0][0], R[0][k], R[0][k + 1]);
+    const e = R[R.length - 1];
+    tri(e[0], e[k + 1], e[k]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function makeBodyProfile(topPts, botPts, widPts, arches) {
+  const topY = x => evalProfile(topPts, x);
+  const halfWidth = x => evalProfile(widPts, x);
+  const bottomY = x => {
+    let y = evalProfile(botPts, x);
+    if (arches) for (const [ax, r] of arches) {
+      const ar = r + .1, d = Math.abs(x - ax);
+      if (d < ar) {
+        const u = d / ar, archY = (2 * r - .02) * Math.pow(Math.max(0, 1 - u * u), .55);
+        y = Math.max(y, Math.min(topY(x) - .06, archY));
+      }
+    }
+    return y;
+  };
+  const build = (mat, x0, x1, step, twFn, shFn) => {
+    const xs = profileSamples(x0, x1, step || .15, arches);
+    return loft8(xs.map(x => {
+      const w = halfWidth(x), y0 = bottomY(x), y1 = topY(x);
+      return [x, w, y0, y1, twFn ? twFn(x, w) : w * .68, shFn ? shFn(x) : .74];
+    }), mat);
+  };
+  return { topY, bottomY, halfWidth, build };
+}
+function cabinGlass(roofPts, roofWPts, baseYPts, x0, x1, mat) {
+  const xs = profileSamples(x0, x1, .14);
+  return loft8(xs.map(x => {
+    const w = evalProfile(roofWPts, x), y0 = evalProfile(baseYPts, x), y1 = evalProfile(roofPts, x);
+    return [x, w, y0, Math.max(y0 + .03, y1), w * .72, .65];
+  }), mat);
+}
+
+/* ---------- shared chassis: wheels, seats, driver, mirrors ---------- */
 function chassis(L, o) {
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
   const M = PH(L.m, { shininess: 110, specular: 0x888888 }), D = PH(L.d, { shininess: 55, specular: 0x333333 }), A = PH(L.a, { shininess: 80, specular: 0x555555 });
@@ -575,7 +658,6 @@ function chassis(L, o) {
     wh.spin.userData.r = ra; wh.spin.userData.rear = !front; // rear flag: lets syncModel lock rear wheels under handbrake
     piv.add(wh.spin); piv.add(wh.cal); wheels.push(wh.spin); if (front) pivots.push(piv);
   }
-  // fender pod over each wheel: a narrow loft band, centred on the wheel, that hides the top of the tyre
   const pod = (ax, ra, yt, len, mat) => {
     const w = .18, yb = 2 * ra - .1;
     for (const s of [-1, 1]) add([[ax - len, w * .7, yb, yt - .08, w * .4], [ax - len * .4, w, yb, yt, w * .8], [ax + len * .4, w, yb, yt, w * .8], [ax + len, w * .7, yb, yt - .08, w * .4]], mat || M, s * (o.track + .02));
@@ -588,7 +670,7 @@ function chassis(L, o) {
   b(.04, .2, .24, D, o.seatX + .55, .8, -.3).rotation.z = .5;
   const helmet = new THREE.Mesh(new THREE.SphereGeometry(.13, 14, 10), helmMat); helmet.position.set(o.seatX - .06, .96, -.3); body.add(helmet);
   const visor = new THREE.Mesh(new THREE.SphereGeometry(.134, 14, 8, -.9 + Math.PI, 1.8, 1.15, .5), visorMat); visor.position.copy(helmet.position); body.add(visor);
-  const mirror = (x, y, mat) => { for (const s of [-1, 1]) { strut([x, y - .06, s * .86], [x + .03, y, s * 1.0], .02, D, body); b(.1, .07, .17, mat || M, x + .03, y, s * 1.04); } };
+  const mirror = (x, y, mat) => { for (const s of [-1, 1]) { strut([x, y - .06, s * .82], [x + .03, y, s * .98], .018, D, body); b(.09, .06, .15, mat || M, x + .03, y, s * 1.02); } };
   return { g, body, M, D, A, G, add, b, pod, wheels, pivots, helmet, visor, mirror };
 }
 
@@ -617,38 +699,59 @@ function finish(c, tcam, extra) {
    FERRARI LaFerrari  - low, cab-forward, black roof, round tail lamps, quad pipes
    ====================================================================== */
 function laferrari(L) {
-  const c = chassis(L, { fx: 1.10, fr: .33, fw: .30, rx: -1.68, rr: .357, rw: .38, track: .82, seat: 0x9c1010, seatX: -.2,
+  const c = chassis(L, { fx: 1.10, fr: .33, fw: .26, rx: -1.68, rr: .357, rw: .34, track: .82, seat: 0x9c1010, seatX: -.2,
     wheel: { n: 5, rim: PH(0xcfd3da, { shininess: 120, specular: 0xffffff }), cap: BA(0xf2c200), cal: PH(0xd01010, { shininess: 80 }) } });
-  const { M, D, A, G, add, b, body } = c;
-  // floor and diffuser
-  add([[-2.5, .68, .17, .24, .68], [-1.7, .9, .17, .24, .9], [1.1, .86, .17, .24, .86], [2.12, .5, .19, .25, .5]], D);
-  // main body
-  add([[-2.52, .70, .38, .86, .46], [-2.15, .88, .30, .98, .52], [-1.68, .88, .28, 1.0, .55], [-1.15, .86, .27, .90, .50], [-.55, .90, .26, .64, .70],
-       [.35, .92, .25, .60, .70], [.95, .88, .26, .56, .66], [1.45, .82, .27, .48, .58], [1.85, .64, .27, .42, .44], [2.16, .42, .27, .36, .30]], M);
-  c.pod(-1.68, .357, 1.02, .62); c.pod(1.10, .33, .62, .6);
-  // greenhouse: tinted glass, black roof cap
-  add([[-1.05, .58, .62, .95, .40], [-.55, .70, .60, 1.06, .46], [.15, .74, .60, 1.08, .46], [.72, .72, .58, .94, .50], [1.22, .66, .56, .64, .50]], G);
-  add([[-.62, .44, 1.03, 1.1, .34], [-.15, .50, 1.05, 1.13, .38], [.15, .50, 1.05, 1.13, .38], [.6, .44, .96, 1.04, .34]], D);
-  // side intakes and fender vents
+  const { M, D, A, G, b, body } = c;
+  const arches = [[1.10, .33], [-1.68, .357]];
+  const bp = makeBodyProfile(
+    [[-2.52, .73], [-2.10, .86], [-1.68, .92], [-1.15, .88], [-.55, .79], [.25, .73], [.75, .71], [1.10, .74], [1.60, .57], [1.96, .43], [2.18, .32]],
+    [[-2.52, .32], [-2.15, .20], [-1.20, .17], [.65, .17], [1.65, .19], [2.18, .22]],
+    [[-2.52, .54], [-2.20, .86], [-1.68, .97], [-1.10, .92], [-.35, .84], [.55, .85], [1.10, .94], [1.60, .72], [1.96, .52], [2.18, .33]],
+    arches
+  );
+  body.add(bp.build(M, -2.52, 2.18, .15, (x, w) => w * (x < -1.2 ? .72 : x > 1.3 ? .60 : .78)));
+  // dark lower sill & tucked front splitter
+  const sp = makeBodyProfile(
+    [[-2.48, .28], [-2.0, .23], [-1.2, .22], [.7, .21], [1.6, .22], [2.16, .24]],
+    [[-2.48, .17], [-1.2, .16], [.7, .16], [2.16, .19]],
+    [[-2.48, .50], [-1.68, .72], [-.5, .81], [.7, .82], [1.6, .66], [2.16, .34]],
+    arches
+  );
+  body.add(sp.build(D, -2.48, 2.16, .2, (x, w) => w * .90));
+  b(.18, .022, .90, D, 1.98, .185, 0);
+  b(.10, .10, .05, M, 2.12, .25, 0);
+  // recessed dark hood duct + thin nose emblem
+  b(.54, .014, .40, D, 1.48, bp.topY(1.48) - .002, 0).rotation.z = -.24;
+  b(.07, .010, .07, A, 2.04, bp.topY(2.04) + .004, 0).rotation.z = -.26;
+  // cabin glass & black roof panel + red A-pillars
+  const rY = [[-1.42, .81], [-.95, .97], [-.45, 1.09], [-.05, 1.11], [.40, 1.03], [.78, .85], [1.06, .70]];
+  const rW = [[-1.42, .26], [-.95, .42], [-.45, .47], [-.05, .47], [.40, .45], [.78, .43], [1.06, .39]];
+  const gBase = [[-1.42, .75], [-.6, .70], [.3, .66], [1.06, .66]];
+  body.add(cabinGlass(rY, rW, gBase, -1.42, 1.06, G));
+  // black roof cap (raised slightly above glass to avoid z-fighting)
+  const roofCap = makeBodyProfile([[-.62, 1.095], [-.25, 1.125], [.10, 1.115], [.34, 1.05]], [[-.62, 1.04], [-.25, 1.07], [.10, 1.06], [.34, 1.01]], [[-.62, .33], [-.25, .37], [.10, .37], [.34, .34]]);
+  body.add(roofCap.build(D, -.62, .34, .14, (x, w) => w * .84));
+  // red A-pillars, swept side intakes, flush headlamps
   for (const s of [-1, 1]) {
-    b(.9, .26, .05, D, -.95, .52, s * .915); b(.5, .16, .05, D, .95, .5, s * .87);
-    b(.34, .03, .22, D, 1.55, .495, s * .3); // hood vents
+    strut([1.02, .70, s * .42], [.34, 1.04, s * .35], .024, M, body);
+    const intake = makeBodyProfile([[-1.12, .62], [-.82, .60], [-.50, .54]], [[-1.12, .34], [-.82, .35], [-.50, .38]], [[-1.12, .02], [-.82, .03], [-.50, .02]]);
+    const im = intake.build(D, -1.12, -.50, .15, (x, w) => w);
+    im.position.z = s * (bp.halfWidth(-.82) - .005); body.add(im);
+    const hl = b(.20, .020, .11, BA(0xdbe8f5), 1.66, bp.topY(1.66) - .002, s * .52);
+    hl.rotation.y = s * .22; hl.rotation.z = -.24;
   }
-  b(.7, .035, .5, D, 1.2, .565, 0);
-  // nose splitter and headlamps
-  b(.34, .035, 1.5, D, 2.0, .2, 0);
-  for (const s of [-1, 1]) b(.22, .045, .18, BA(0xdbe8f5), 1.74, .43, s * .6).rotation.y = s * .3;
-  // rear: mesh grille, tail flap, round lamps, quad pipes, diffuser fins
-  b(.05, .22, .8, D, -2.53, .58, 0); b(.4, .03, 1.2, M, -2.38, .97, 0).rotation.z = -.12;
-  tailpipes(c, -2.5, .33, [-.5, -.34, .34, .5], .055, .18);
-  for (let i = 0; i < 6; i++) b(.5, .13, .025, D, -2.3, .21, -.5 + i * .2);
-  c.mirror(.75, .7);
-  return finish(c, [-.55, 1.38, 0], (rain, run) => {
+  // rear: mesh grille, low rear lip, diffuser fins, quad exhausts
+  b(.03, .20, .86, D, -2.51, .50, 0);
+  b(.14, .024, 1.02, M, -2.45, .735, 0).rotation.z = -.08;
+  tailpipes(c, -2.45, .28, [-.58, -.45, .45, .58], .046, .14);
+  for (let i = 0; i < 6; i++) b(.36, .12, .02, D, -2.34, .21, -.45 + i * .18);
+  c.mirror(.68, .73);
+  return finish(c, [-.50, 1.32, 0], (rain, run) => {
     for (const s of [-1, 1]) {
-      const l = new THREE.Mesh(new THREE.CircleGeometry(.1, 16), run); l.rotation.y = -Math.PI / 2; l.position.set(-2.535, .66, s * .62); body.add(l);
-      const l2 = new THREE.Mesh(new THREE.CircleGeometry(.075, 16), rain); l2.rotation.y = -Math.PI / 2; l2.position.set(-2.54, .66, s * .62); body.add(l2);
+      const l = new THREE.Mesh(new THREE.CircleGeometry(.09, 16), run); l.rotation.y = -Math.PI / 2; l.position.set(-2.525, .62, s * .50); body.add(l);
+      const l2 = new THREE.Mesh(new THREE.CircleGeometry(.065, 16), rain); l2.rotation.y = -Math.PI / 2; l2.position.set(-2.53, .62, s * .50); body.add(l2);
     }
-    b(.02, .07, .18, rain, -2.54, .46, 0);
+    b(.02, .06, .14, rain, -2.52, .34, 0);
   });
 }
 
