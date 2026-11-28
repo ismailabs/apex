@@ -760,44 +760,61 @@ function laferrari(L) {
    livery: m = front/lower blue, d = dark navy rear/roof, a = silver C-line and trim
    ====================================================================== */
 function chiron(L) {
-  const c = chassis(L, { fx: 1.03, fr: .34, fw: .32, rx: -1.68, rr: .356, rw: .38, track: .82, seat: 0xb85a1e, seatX: -.25,
-    wheel: { n: 5, dbl: true, rim: PH(0x383d48, { shininess: 110, specular: 0xaaaaaa }), cap: BA(0xb02020), cal: PH(0xc01818, { shininess: 60 }) } });
-  const { M, D, A, G, add, b, body } = c;
-  add([[-2.5, .66, .17, .24, .66], [-1.7, .92, .17, .24, .92], [1.03, .88, .17, .24, .88], [2.0, .5, .19, .25, .5]], D);
-  // rear half in dark navy
-  add([[-2.55, .74, .34, .98, .62], [-2.2, .96, .30, 1.05, .72], [-1.68, .96, .28, 1.04, .74], [-1.1, .96, .27, .98, .74], [-.5, .96, .26, .92, .74], [.15, .94, .26, .82, .78]], D);
-  // front half in blue
-  add([[.15, .94, .26, .82, .78], [.6, .93, .26, .78, .76], [1.03, .88, .27, .70, .70], [1.5, .80, .27, .64, .62], [1.82, .68, .27, .60, .52], [2.0, .50, .27, .56, .40]], M);
-  add([[-.55, 1.0, .26, .50, .96], [.15, 1.0, .26, .50, .96]], M); // blue sill
-  c.pod(-1.68, .356, 1.07, .64, D); c.pod(1.03, .34, .72, .6, M);
-  // greenhouse
-  add([[-1.6, .60, .86, .96, .34], [-1.0, .80, .84, 1.12, .50], [-.3, .86, .80, 1.2, .56], [.3, .84, .78, 1.19, .55], [.92, .76, .74, .82, .5]], G);
-  add([[-1.0, .40, 1.09, 1.15, .30], [-.3, .50, 1.17, 1.23, .38], [.3, .50, 1.16, 1.22, .38], [.55, .44, 1.1, 1.15, .34]], D);
-  // C-line on each side (arc bulging to the rear)
+  const c = chassis(L, { fx: 1.03, fr: .34, fw: .28, rx: -1.68, rr: .356, rw: .36, track: .82, seat: 0xb85a1e, seatX: -.25,
+    wheel: { n: 5, dbl: true, rim: PH(0x525a68, { shininess: 110, specular: 0xbbbbbb }), cap: BA(0xb02020), cal: PH(0xc01818, { shininess: 60 }) } });
+  const { M, D, A, G, b, body } = c;
+  const arches = [[1.03, .34], [-1.68, .356]];
+  const topPts = [[-2.50, .82], [-2.10, .92], [-1.68, .96], [-1.05, .94], [-.35, .89], [.35, .86], [1.03, .82], [1.53, .70], [1.88, .56], [2.05, .40]];
+  const botPts = [[-2.50, .30], [-2.10, .20], [-1.20, .17], [.65, .17], [1.60, .19], [2.05, .22]];
+  const widPts = [[-2.50, .58], [-2.15, .88], [-1.68, .99], [-1.05, .96], [-.30, .94], [.40, .95], [1.03, .97], [1.53, .78], [1.88, .58], [2.05, .40]];
+  const bp = makeBodyProfile(topPts, botPts, widPts, arches);
+  // two-tone body: dark navy rear (-2.50..0.12) and bright blue front (0.12..2.05)
+  body.add(bp.build(D, -2.50, .14, .15, (x, w) => w * (x < -1.3 ? .74 : .78)));
+  body.add(bp.build(M, .12, 2.05, .15, (x, w) => w * (x > 1.3 ? .64 : .78)));
+  // blue lower sill under the C-line + tucked front splitter
+  const sill = makeBodyProfile([[-.38, .42], [-.10, .42], [.14, .42]], [[-.38, .19], [-.10, .19], [.14, .19]], [[-.38, .92], [-.10, .935], [.14, .945]], arches);
+  body.add(sill.build(M, -.38, .14, .14, (x, w) => w * .98));
+  b(.18, .025, .92, D, 1.90, .19, 0);
+  // cabin glass & dark roof panel
+  const rY = [[-1.50, .86], [-1.00, 1.06], [-.40, 1.19], [.05, 1.21], [.45, 1.13], [.82, .94], [1.06, .80]];
+  const rW = [[-1.50, .32], [-1.00, .46], [-.40, .52], [.05, .52], [.45, .50], [.82, .46], [1.06, .42]];
+  const gBase = [[-1.50, .80], [-.50, .76], [.40, .74], [1.06, .74]];
+  body.add(cabinGlass(rY, rW, gBase, -1.50, 1.06, G));
+  const roofCap = makeBodyProfile([[-.82, 1.12], [-.35, 1.205], [.10, 1.215], [.40, 1.14]], [[-.82, 1.06], [-.35, 1.15], [.10, 1.16], [.40, 1.09]], [[-.82, .38], [-.35, .44], [.10, .44], [.40, .40]]);
+  body.add(roofCap.build(D, -.82, .40, .15, (x, w) => w * .84));
+  // flat inset silver C-line crescent + 4-LED headlamps
   for (const s of [-1, 1]) {
-    let prev = null;
-    for (let k = 0; k <= 8; k++) {
-      const a = Math.PI * (.5 + k / 8), p = [.2 + Math.cos(a) * .46, .66 + Math.sin(a) * .2, s * .985];
-      if (prev) strut(prev, p, .03, A, body); prev = p;
+    strut([1.02, .78, s * .44], [.38, 1.14, s * .40], .024, D, body);
+    b(.38, .30, .016, D, -.14, .56, s * (bp.halfWidth(-.14) - .006));
+    for (let k = 0; k < 12; k++) {
+      const am = Math.PI * (.54 + (k + .5) / 12 * .92);
+      const cx = .20 + Math.cos(am) * .38, cy = .60 + Math.sin(am) * .22;
+      const zSurf = bp.halfWidth(cx) * (cy > .74 ? .92 : .99);
+      const seg = b(.10, .036, .014, A, cx, cy, s * (zSurf + .006));
+      seg.rotation.z = am + Math.PI / 2;
     }
-    b(.08, .07, .5, D, -.62, .58, s * .9); // rear side intake
-    for (let i = 0; i < 4; i++) b(.045, .05, .05, BA(0xeaf4ff), 1.74 - i * .02, .56, s * (.42 + i * .1));
+    // 4-dot LED headlamp bar flush on nose
+    b(.035, .05, .18, D, 1.80, bp.topY(1.80) - .04, s * .39).rotation.y = s * .28;
+    for (let i = 0; i < 4; i++) b(.025, .026, .026, BA(0xeaf4ff), 1.822 - i * .011, bp.topY(1.80) - .04, s * (.32 + i * .042));
   }
-  // horseshoe grille
-  b(.05, .32, .5, D, 2.02, .42, 0);
-  b(.06, .04, .5, A, 2.025, .59, 0);
-  for (const s of [-1, 1]) { const q = b(.06, .36, .04, A, 2.025, .41, s * .3); q.rotation.x = -s * .12; }
-  b(.4, .035, 1.5, D, 1.95, .2, 0);
-  // rear wing, pylons, central quad exhaust
-  const w = b(.55, .04, 1.55, D, -2.38, 1.12, 0); w.rotation.z = -.1;
-  for (const s of [-1, 1]) { b(.6, .26, .035, D, -2.38, 1.12, s * .78); strut([-2.15, .98, s * .4], [-2.3, 1.1, s * .4], .03, D, body); }
-  tailpipes(c, -2.56, .4, [-.2, -.07, .07, .2], .05, .18);
-  for (let i = 0; i < 6; i++) b(.5, .15, .025, D, -2.35, .22, -.5 + i * .2);
-  c.mirror(.72, .78);
-  return finish(c, [-.7, 1.62, 0], (rain, run) => {
-    b(.03, .05, 1.3, run, -2.56, .66, 0);
-    for (const s of [-1, 1]) b(.03, .1, .26, run, -2.56, .66, s * .6);
-    b(.03, .05, .5, rain, -2.565, .6, 0);
+  // flush horseshoe grille on rounded nose
+  const gd = PH(0x0b0e14, { shininess: 20 });
+  b(.03, .18, .26, gd, 2.045, .31, 0);
+  b(.035, .020, .20, A, 2.048, .405, 0);
+  for (const s of [-1, 1]) {
+    const q = b(.035, .17, .022, A, 2.048, .305, s * .13); q.rotation.x = -s * .07;
+    const cTop = b(.035, .05, .022, A, 2.048, .39, s * .115); cTop.rotation.x = s * .65;
+  }
+  // sleek retractable rear wing, central quad exhaust, diffuser
+  b(.34, .025, 1.28, D, -2.34, .95, 0).rotation.z = -.08;
+  for (const s of [-1, 1]) strut([-2.22, .85, s * .36], [-2.32, .94, s * .36], .022, D, body);
+  tailpipes(c, -2.47, .30, [-.18, -.06, .06, .18], .044, .14);
+  for (let i = 0; i < 6; i++) b(.38, .12, .02, D, -2.35, .21, -.45 + i * .18);
+  c.mirror(.68, .78);
+  return finish(c, [-.60, 1.48, 0], (rain, run) => {
+    b(.02, .08, 1.06, PH(0x0b0e14), -2.495, .64, 0);
+    b(.025, .032, 1.04, run, -2.502, .64, 0);
+    b(.02, .045, .30, rain, -2.505, .56, 0);
   });
 }
 
@@ -846,7 +863,7 @@ function jesko(L) {
 /* ---------- registry used by the game's car selector ---------- */
 const DEFS = [
   { id: 'laferrari', name: 'LaFerrari', build: laferrari, ui: '#e10600', liv: { m: '#d40000', d: '#101010', a: '#f2c200' } },
-  { id: 'chiron',    name: 'Chiron',    build: chiron,    ui: '#2f7bff', liv: { m: '#1f5fd0', d: '#1a2d5c', a: '#d8dde6' } },
+  { id: 'chiron',    name: 'Chiron',    build: chiron,    ui: '#2f7bff', liv: { m: '#1f5fd0', d: '#22366b', a: '#d8dde6' } },
   { id: 'jesko',     name: 'Jesko',     build: jesko,     ui: '#9dff1a', liv: { m: '#eef1f4', d: '#15181d', a: '#9dff1a' } }
 ];
 return { DEFS, laferrari, chiron, jesko };
