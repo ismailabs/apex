@@ -24,8 +24,8 @@ canvas#g{display:block;width:100%;height:100%;touch-action:none}
 #hs b{font-size:56px}#gear{font-size:30px;color:var(--acc);font-weight:800;margin-left:12px;display:inline-block;min-width:1ch}
 #rev{height:6px;background:var(--line);margin-top:8px}#rev i{display:block;height:100%;width:0;background:var(--acc)}
 #map{position:absolute;right:max(12px,env(safe-area-inset-right,0px));bottom:14px;width:230px;height:170px;background:var(--panel);border-left:4px solid var(--acc);pointer-events:none}
-#tools{position:absolute;left:max(12px,env(safe-area-inset-left,0px));bottom:14px;display:flex;gap:8px;z-index:5}
-#tools button{background:var(--panel);border:1px solid var(--line);color:var(--ink);font:700 17px 'Barlow Condensed','Arial Narrow',Arial,sans-serif;padding:8px 12px;border-radius:4px;cursor:pointer}
+#tools{position:absolute;left:max(12px,env(safe-area-inset-left,0px));bottom:14px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(50vw - 125px);z-index:5}
+#tools button{background:var(--panel);border:1px solid var(--line);color:var(--ink);font:700 16px 'Barlow Condensed','Arial Narrow',Arial,sans-serif;padding:7px 10px;border-radius:4px;cursor:pointer;white-space:nowrap}
 #msg{position:absolute;left:0;right:0;top:17%;text-align:center;font-size:30px;font-weight:800;text-shadow:0 2px 12px #000;pointer-events:none}
 #lights{position:absolute;left:0;right:0;top:24%;text-align:center;font-size:min(22vw,200px);font-weight:800;text-shadow:0 4px 30px #000;pointer-events:none}
 .screen{position:absolute;inset:0;display:flex;background:linear-gradient(90deg,rgba(10,12,16,.93) 0,rgba(10,12,16,.82) 45%,rgba(10,12,16,.15) 100%);padding-block:16px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));box-sizing:border-box;overflow:auto}
@@ -71,8 +71,10 @@ button:focus-visible{outline:3px solid #fff;outline-offset:2px}
 #rotateWarn h2{font-size:40px;font-weight:800;margin:0;line-height:1}
 #rotateWarn p{margin:0;max-width:300px;font-size:19px}
 @keyframes tilt{0%,20%{transform:rotate(0deg)}55%,80%{transform:rotate(-90deg)}100%{transform:rotate(0deg)}}
-body.mobile #tools{top:12px;bottom:auto;left:50%;transform:translateX(-50%);gap:6px}
-body.mobile #tools button{font-size:15px;padding:6px 10px}
+body.mobile #tools{top:8px;bottom:auto;left:50%;transform:translateX(-50%);gap:4px;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 260px)}
+body.mobile:not(.racing) #tools{left:auto;right:max(12px,env(safe-area-inset-right,0px));transform:none;max-width:none}
+body.mobile:not(.racing) #gyroBtn,body.mobile:not(.racing) #calBtn,body.mobile:not(.racing) #gyroCfgBtn{display:none}
+body.mobile #tools button{font-size:13px;padding:5px 8px;white-space:nowrap}
 body.mobile .hud b{font-size:24px}body.mobile .hud small{font-size:12px}
 body.mobile #hl,body.mobile #hr{gap:10px;padding:4px 8px}body.mobile #hr>div{min-width:58px}
 body.mobile #map{width:118px;height:84px;top:64px;bottom:auto}
@@ -102,6 +104,12 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
 #gyroStatus{font-size:16px;color:var(--dim);margin:10px 0 0;line-height:1.25}
 #gyroStatus.warn{color:#ffb020}
 #gyroStatus.err{color:#ff5c5c}
+@media (max-height:500px){
+ .gbox{padding:12px 14px}.ghead{margin-bottom:8px}.ghead h2{font-size:24px}
+ .gactions{margin-bottom:8px}.gactions button{padding:6px 10px;font-size:18px}
+ .gmeter{margin:4px 0 8px}.grow{margin-bottom:6px}.grow label{font-size:16px}
+ #gyroStatus{font-size:14px;margin-top:6px}
+}
 </style>
 </head>
 <body>
@@ -561,7 +569,7 @@ function aud(){
  }catch(e){AC=null}}
 function beep(f,d,t0=0,v=.14,type='sine'){if(!AC)return;const o=AC.createOscillator(),g=AC.createGain(),n=AC.currentTime+t0;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,n);g.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(g);g.connect(master);o.start(n);o.stop(n+d)}
 function thud(v){beep(95,.18,0,Math.min(.35,v),'triangle');beep(55,.25,0,Math.min(.3,v),'sine')}
-function setMute(m){muted=m;if(master)master.gain.setTargetAtTime(m?0:.9,AC.currentTime,.02);$('mute').textContent=m?'Sound off (M)':'Sound on (M)';$('mute').setAttribute('aria-pressed',m);try{localStorage.setItem('apexMute',m?'1':'0')}catch(e){}}
+function setMute(m){muted=m;if(master)master.gain.setTargetAtTime(m?0:.9,AC.currentTime,.02);$('mute').textContent=mobileUI?(m?'Sound off':'Sound on'):(m?'Sound off (M)':'Sound on (M)');$('mute').setAttribute('aria-pressed',m);try{localStorage.setItem('apexMute',m?'1':'0')}catch(e){}}
 // Gear and revs from road speed (m/s); shared by the HUD and the engine note.
 const GEARS=[0,16,26,36,46,56,66,75,90];
 function gearOf(v){let g=1;while(g<8&&v>GEARS[g])g++;const lo=GEARS[g-1],hi=GEARS[g];return{g,rpm:clamp((v-lo)/(hi-lo),0,1)}}
@@ -595,7 +603,7 @@ function respawn(c){const i=c.idx;c.x=P[i][0];c.z=P[i][1];c.a=T[i];c.vx=c.vz=c.v
 function newGrid(){cars=[0,1,2,3].map(mkCar);pl=cars[2];pl.m.setLivery(LV[selected]);cars.forEach(syncModel)}
 function init(){
  newGrid();order=[];raceT=0;cd=3.2;lastN=null;S='count';parts=[];clearSkids();clearTimeout(goTimer);camSnap=true;wrongT=0;
- for(const k in K)K[k]=0;clearTouch();
+ for(const k in K)K[k]=0;clearTouch();document.body.classList.add('racing');
  $('start').hidden=$('end').hidden=true;$('hud').hidden=false;$('camBtn').hidden=false;$('touchUI').hidden=!mobileUI;$('resetBtn').hidden=!mobileUI;$('msg').textContent='';$('lights').textContent='';
  $('rk').textContent=ord[2];$('lap').textContent='1/'+LAPS;$('lt').textContent=fmt(0);$('bt').textContent='--';$('sp').textContent='0';$('gear').textContent='N';$('rev').firstChild.style.width='0';
  if(document.activeElement)document.activeElement.blur();window.focus()}
@@ -767,7 +775,7 @@ function drawMap(){
 let camYaw=T[0],camSnap=true,shake=0,camFov=62;
 const camPos=new V3(),camLook=new V3(),tmp=new V3();
 const CAMN=['Chase cam','T-cam'];
-function setCam(m){camMode=m;camSnap=true;$('camBtn').textContent=CAMN[m]+' (C)'}
+function setCam(m){camMode=m;camSnap=true;$('camBtn').textContent=mobileUI?(m?'T-cam':'Chase'):(CAMN[m]+' (C)')}
 function updateCamera(dt){
  const c=pl,aspect=camera.aspect,sp=Math.min(1,c.spd/VMAX);
  let fov;
@@ -806,7 +814,7 @@ function updateSun(){
 /* ================= RESULTS ================= */
 function endRace(){
  S='end';beep(660,.3);beep(880,.3,.15);beep(1320,.5,.3);
- clearTimeout(goTimer);$('lights').textContent='';$('msg').textContent='';msgTimer=0;
+ clearTimeout(goTimer);$('lights').textContent='';$('msg').textContent='';msgTimer=0;document.body.classList.remove('racing');
  $('hud').hidden=true;$('camBtn').hidden=true;$('touchUI').hidden=true;$('resetBtn').hidden=true;clearTouch();
  const place=order.indexOf(pl);
  $('pos').textContent=ord[place];$('tt').textContent=fmt(pl.finishT);$('eb').textContent=fmt(pl.best);
@@ -844,8 +852,10 @@ function enableMobileUI(){
  mobileUI=true;document.body.classList.add('mobile');
  $('ctrlHint').textContent='Tap Start Race for full-screen landscape play. Left/Right to steer, GAS / BRAKE pedals, DRIFT for handbrake.';
  $('fsBtn').hidden=!(document.fullscreenEnabled||document.webkitFullscreenEnabled);
+ $('fsBtn').textContent='Full';
  if(driving()){$('touchUI').hidden=false;$('resetBtn').hidden=S!=='race'}
- if(typeof GYRO!=='undefined')GYRO.syncUI();
+ setMute(muted);setCam(camMode);
+ GYRO.syncUI();
  checkOrientation()}
 function checkOrientation(){
  const portrait=mobileUI&&window.innerHeight>window.innerWidth;
@@ -875,7 +885,6 @@ function syncTouches(e){
 addEventListener('touchstart',()=>{if(!mobileUI)enableMobileUI()},{once:true,passive:true});
 addEventListener('resize',checkOrientation);
 addEventListener('orientationchange',()=>setTimeout(checkOrientation,80));
-if(isMobile)enableMobileUI();else checkOrientation();
 
 /* ================= GYROSCOPE STEERING ================= */
 const GYRO=(()=>{
@@ -992,6 +1001,7 @@ const GYRO=(()=>{
    $('gyroBtn').textContent=on?'Gyro: ON':'Gyro: OFF';
    $('gyroBtn').setAttribute('aria-pressed',on);
    $('calBtn').hidden=!on;
+   $('calBtn').textContent=mobileUI?'Cal':'Calibrate';
    $('gyroToggle').textContent=on?'Gyro: ON':'Gyro: OFF';
    $('gyroToggle').classList.toggle('on',on);
    $('gyroToggle').setAttribute('aria-pressed',on);
@@ -1029,7 +1039,6 @@ $('gyroCalBtn').onclick=()=>GYRO.calibrate();
 $('gyroSens').oninput=e=>{GYRO.sensitivity=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
 $('gyroDead').oninput=e=>{GYRO.deadzone=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
 $('gyroSmooth').oninput=e=>{GYRO.smoothing=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
-GYRO.syncUI();
 
 $('goBtn').onclick=()=>{aud();if(mobileUI)enterFullscreen();if(GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();init()};
 $('again').onclick=()=>{aud();if(mobileUI)enterFullscreen();if(GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();init()};
@@ -1054,7 +1063,11 @@ function frame(t){
   for(const c of cars)syncModel(c,S==='race'?dt:0);
   updateHUD();updateAudio();render(dt)}
  requestAnimationFrame(frame)}
-newGrid();drawPreviews();setMute(muted);
+newGrid();
+if(isMobile)enableMobileUI();else checkOrientation();
+GYRO.syncUI();
+drawPreviews();
+setMute(muted);
 requestAnimationFrame(frame);
 </script>
 </body>
