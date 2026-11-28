@@ -1310,7 +1310,7 @@ function drawPreviews(){
  sc.add(new THREE.HemisphereLight(0xffffff,0x333844,.85));const d=new THREE.DirectionalLight(0xffffff,.8);d.position.set(3,6,4);sc.add(d);
  cam.position.set(6.2,3.9,6.4);cam.lookAt(0,.3,0);
  const rt=new THREE.WebGLRenderTarget(w,h),buf=new Uint8Array(w*h*4);if(renderer.capabilities.isWebGL2)rt.samples=4;
- document.querySelectorAll('.lv canvas').forEach((c,i)=>{
+ document.querySelectorAll('#carList canvas').forEach((c,i)=>{
   const car=CARS[i].build();sc.add(car.group);
   r.setRenderTarget(rt);r.setClearColor(0x000000,0);r.clear();r.render(sc,cam);r.readRenderTargetPixels(rt,0,0,w,h,buf);
   const g=c.getContext('2d'),im=g.createImageData(w,h);for(let y=0;y<h;y++)im.data.set(buf.subarray((h-1-y)*w*4,(h-y)*w*4),y*w*4);g.putImageData(im,0,0);
