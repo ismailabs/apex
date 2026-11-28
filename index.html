@@ -110,6 +110,17 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
  .gmeter{margin:4px 0 8px}.grow{margin-bottom:6px}.grow label{font-size:16px}
  #gyroStatus{font-size:14px;margin-top:6px}
 }
+/* Tilt steering */
+body:not(.mobile) #gyroBtn,body:not(.mobile) #calBtn,body:not(.mobile) #gyroCfgBtn,body:not(.mobile) #startGyroBtn{display:none}
+.gopt{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:18px;font-weight:700;margin-bottom:10px}
+.gopt select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;font:700 18px 'Barlow Condensed','Arial Narrow',Arial,sans-serif;padding:6px 10px}
+.gopt input{width:24px;height:24px;accent-color:var(--acc);margin:0}
+#tiltHud{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);width:200px;height:10px;background:var(--panel);border:1px solid var(--line);border-radius:5px;overflow:hidden;pointer-events:none}
+#tiltHud::after{content:'';position:absolute;left:calc(50% - 1px);top:0;bottom:0;width:2px;background:#fff}
+#tiltDot{position:absolute;top:0;bottom:0;left:50%;width:18px;margin-left:-9px;background:var(--acc);border-radius:5px}
+body.tilt #tBrake{position:fixed;left:max(14px,env(safe-area-inset-left,0px));bottom:max(14px,env(safe-area-inset-bottom,0px));width:112px;height:90px}
+body.tilt #tGas{grid-column:2}
+body.autogas #tGas{display:none}
 </style>
 </head>
 <body>
@@ -119,6 +130,7 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
  <div class="hud" id="hr"><div><small>Lap time</small><b id="lt">0:00.000</b></div><div><small>Best lap</small><b id="bt">--</b></div></div>
  <div class="hud" id="hs"><b id="sp">0</b> km/h<span id="gear">N</span><div id="rev"><i></i></div></div>
  <canvas id="map" aria-label="Track minimap"></canvas>
+ <div id="tiltHud" aria-hidden="true" hidden><div id="tiltDot"></div></div>
 </div>
 <div id="msg"></div>
 <div id="lights" aria-live="polite"></div>
@@ -130,7 +142,7 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
  </div>
  <div class="btnRow">
   <button class="go" id="goBtn">Start Race</button>
-  <button type="button" class="sec" id="startGyroBtn">Gyro Controls</button>
+  <button type="button" class="sec" id="startGyroBtn">Tilt Steering</button>
  </div>
  <p id="ctrlHint" style="font-size:17px">W A S D or arrow keys to drive. S brakes, then reverses. Space is the handbrake. R resets the car. C changes camera. M mutes.</p>
 </div></div>
@@ -155,16 +167,16 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
 </div>
 <div id="gyroPanel" hidden role="dialog" aria-modal="true" aria-labelledby="gyroTitle">
  <div class="gbox">
-  <div class="ghead"><h2 id="gyroTitle">Gyroscope Steering</h2><button type="button" class="gclose" id="gyroClose">Close</button></div>
+  <div class="ghead"><h2 id="gyroTitle">Tilt Steering</h2><button type="button" class="gclose" id="gyroClose">Close</button></div>
   <div class="gactions">
-   <button type="button" id="gyroToggle" aria-pressed="false">Gyro: OFF</button>
-   <button type="button" id="gyroCalBtn" disabled>Calibrate</button>
+   <button type="button" id="gyroToggle" aria-pressed="false">Tilt: OFF</button>
+   <button type="button" id="gyroCalBtn" disabled>Set center</button>
   </div>
   <div class="gmeter" aria-hidden="true"><div id="gyroBar"></div></div>
-  <div class="grow"><label for="gyroSens">Sensitivity <span id="gyroSensVal">1.2x</span></label><input type="range" id="gyroSens" min="0.5" max="2.5" step="0.1" value="1.2"></div>
-  <div class="grow"><label for="gyroDead">Deadzone <span id="gyroDeadVal">3.0°</span></label><input type="range" id="gyroDead" min="0" max="10" step="0.5" value="3"></div>
-  <div class="grow"><label for="gyroSmooth">Smoothing <span id="gyroSmoothVal">0.35</span></label><input type="range" id="gyroSmooth" min="0" max="0.85" step="0.05" value="0.35"></div>
-  <p id="gyroStatus">Gyroscope is off. Touch buttons and keyboard remain active.</p>
+  <div class="grow"><label for="gyroSens">Sensitivity <span id="gyroSensVal">Normal</span></label><input type="range" id="gyroSens" min="1" max="5" step="1" value="3"></div>
+  <label class="gopt">Steering help<select id="gyroAssist"><option value="0">Off</option><option value="1">Low</option><option value="2">High</option></select></label>
+  <label class="gopt">Auto gas<input type="checkbox" id="gyroAuto"></label>
+  <p id="gyroStatus">Tilt steering is off.</p>
  </div>
 </div>
 <div id="rotateWarn" hidden>
@@ -603,7 +615,7 @@ function respawn(c){const i=c.idx;c.x=P[i][0];c.z=P[i][1];c.a=T[i];c.vx=c.vz=c.v
 function newGrid(){cars=[0,1,2,3].map(mkCar);pl=cars[2];pl.m.setLivery(LV[selected]);cars.forEach(syncModel)}
 function init(){
  newGrid();order=[];raceT=0;cd=3.2;lastN=null;S='count';parts=[];clearSkids();clearTimeout(goTimer);camSnap=true;wrongT=0;
- for(const k in K)K[k]=0;clearTouch();document.body.classList.add('racing');
+ for(const k in K)K[k]=0;clearTouch();document.body.classList.add('racing');GYRO.startCal();
  $('start').hidden=$('end').hidden=true;$('hud').hidden=false;$('camBtn').hidden=false;$('touchUI').hidden=!mobileUI;$('resetBtn').hidden=!mobileUI;$('msg').textContent='';$('lights').textContent='';
  $('rk').textContent=ord[2];$('lap').textContent='1/'+LAPS;$('lt').textContent=fmt(0);$('bt').textContent='--';$('sp').textContent='0';$('gear').textContent='N';$('rev').firstChild.style.width='0';
  if(document.activeElement)document.activeElement.blur();window.focus()}
@@ -613,7 +625,7 @@ const VMAX=88;
 const maxYaw=v=>Math.min(2.15,(34+v*.2)/Math.max(v,1)); // grip-limited turn rate, plus a little downforce
 function phys(c,dt,u){
  c.hb=u.hb;c.thr=u.th;
- c.st+=(u.st-c.st)*damp(u.st===0||u.st*c.st<0?12:7.5,dt);
+ c.st+=(u.st-c.st)*damp(u.rate||(u.st===0||u.st*c.st<0?12:7.5),dt); // u.rate is set only for tilt
  let f=Math.cos(c.a),g=Math.sin(c.a);
  const v0=c.vx*f+c.vz*g,sp0=Math.hypot(c.vx,c.vz);
  let yaw=c.st*maxYaw(sp0)*clamp(Math.abs(v0)/9,0,1)*(v0>=-.5?1:-1);
@@ -713,13 +725,23 @@ function syncModel(c,dt=0){
  m.rain.color.set(c.brk||c.hb?0xff2020:0x4a0000)}
 
 /* ================= SIMULATION STEP (fixed 120 Hz) ================= */
+/* Steering help (tilt only): follows the road near your current lane. Full tilt always overrides it. */
+function tiltAssist(c,st){
+ const a=GYRO.assistAmount();
+ if(!a||S!=='race'||c.hb||c.vf<8||Math.cos(dA(c.a,T[c.idx]))<.5)return st;
+ const sp=c.spd,ti=(c.idx+Math.round((9+sp*.3)/SEG))%N,p=at(ti,clamp(c.lat,-HW+2.5,HW-2.5));
+ const d=dA(Math.atan2(p[1]-c.z,p[0]-c.x),c.a),dist=Math.max(5,Math.hypot(p[0]-c.x,p[1]-c.z));
+ const help=clamp(2*sp*Math.sin(d)/dist/maxYaw(sp)*1.15,-1,1);
+ return assistBlend(st,help,a*clamp((c.vf-8)/12,0,1))}
 function playerInput(){
  const kt=((K.KeyD||K.ArrowRight||T_IN.right)?1:0)-((K.KeyA||K.ArrowLeft||T_IN.left)?1:0);
- const gy=(GYRO.enabled&&GYRO.hasData)?GYRO.steer:0;
+ const tilt=GYRO.isActive(),useTilt=tilt&&kt===0;
+ const br=(K.KeyS||K.ArrowDown||T_IN.br)?1:0;
  return{
-  th:(K.KeyW||K.ArrowUp||T_IN.th)?1:0,
-  br:(K.KeyS||K.ArrowDown||T_IN.br)?1:0,
-  st:kt!==0?kt:gy,
+  th:(K.KeyW||K.ArrowUp||T_IN.th||(tilt&&GYRO.autoGas&&!br))?1:0,
+  br,
+  st:useTilt?tiltAssist(pl,GYRO.steer):kt,
+  rate:useTilt?22:0,
   hb:!!(K.Space||T_IN.hb)
  }
 }
@@ -729,7 +751,7 @@ function step(dt){
  if(S==='count'){
   cd-=dt;const n=Math.max(0,Math.ceil(cd-.0001));pl.thr=playerInput().th;
   const lit=clamp(Math.floor((3.2-cd)/.58),0,5);startLamps.forEach((l,i)=>l.color.set(i<lit?0xff1a1a:0x2a0505));
-  if(n!==lastN){lastN=n;if(n>0){beep(520,.15);$('lights').textContent=Math.min(3,n)}else{beep(1040,.45);$('lights').textContent='GO';S='race';startLamps.forEach(l=>l.color.set(0x22ff55));goTimer=setTimeout(()=>$('lights').textContent='',800)}}}
+  if(n!==lastN){lastN=n;if(n>0){beep(520,.15);$('lights').textContent=Math.min(3,n)}else{beep(1040,.45);$('lights').textContent='GO';S='race';GYRO.endCal();startLamps.forEach(l=>l.color.set(0x22ff55));goTimer=setTimeout(()=>$('lights').textContent='',800)}}}
  else if(S==='race'){
   raceT+=dt;
   for(const c of cars){phys(c,dt,c.isP?playerInput():ai(c,dt));trk(c,dt);if(S!=='race')break}
@@ -860,8 +882,9 @@ function enableMobileUI(){
 function checkOrientation(){
  const portrait=mobileUI&&window.innerHeight>window.innerWidth;
  $('rotateWarn').hidden=!portrait;
- if(portrait!==paused){
-  paused=portrait;
+ const hold=portrait||(!$('gyroPanel').hidden&&driving());
+ if(hold!==paused){
+  paused=hold;
   if(paused){clearTouch();GYRO.resetMotion();for(const k in K)K[k]=0;if(AC&&AC.state==='running')AC.suspend()}
   else{if(AC&&AC.state==='suspended'&&!document.hidden)AC.resume();resize()}}}
 async function enterFullscreen(){
@@ -887,72 +910,84 @@ addEventListener('resize',checkOrientation);
 addEventListener('orientationchange',()=>setTimeout(checkOrientation,80));
 
 /* ================= GYROSCOPE STEERING ================= */
+/*TILT-MATH-START*/
+// Steering-wheel angle in degrees (+ = right) from where gravity points on the screen.
+// Raw beta/gamma jump near upright landscape; the gravity vector built from them does not.
+// The .5 floor keeps the reading calm when the phone lies nearly flat.
+function tiltWheelAngle(beta,gamma,orient){
+ const R=Math.PI/180,ux=-Math.cos(beta*R)*Math.sin(gamma*R),uy=Math.sin(beta*R);
+ const s=orient===90?[-uy,ux]:orient===270?[uy,-ux]:orient===180?[-ux,-uy]:[ux,uy];
+ return Math.atan2(-s[0],Math.max(s[1],.5))/R}
+// Small dead zone, then a curve that is gentle near center and reaches 1 at `full` degrees.
+function tiltCurve(deg,full){
+ const DEAD=1.5,x=Math.min(1,Math.max(0,Math.abs(deg)-DEAD)/(full-DEAD));
+ return Math.sign(deg)*Math.pow(x,1.4)}
+// Blend toward the helper. Keep a <= .45 so more tilt never means less steering.
+function assistBlend(st,help,a){return Math.max(-1,Math.min(1,st+a*(1-Math.abs(st))*(help-st)))}
+/*TILT-MATH-END*/
 const GYRO=(()=>{
- const STORE='apexGyro';
- const dAngle=(a,b)=>((a-b+540)%360)-180;
- let listening=false,sensorTimer=0;
+ const STORE='apexTilt';
+ const FULL=[46,39,32,26,21],SENS_NAME=['Very calm','Calm','Normal','Quick','Very quick'],ASSIST=[0,.25,.45];
+ const MAX_OFFSET=15; // centering can never move neutral further than this from level
+ let listening=false,sensorTimer=0,filt=0,hasFilt=false,lastT=0,lastOrient=null,cal=null;
+ const orientAngle=()=>{
+  const a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(typeof window.orientation==='number'?window.orientation:0);
+  return((a%360)+360)%360};
  const g={
   enabled:false,
   supported:typeof window.DeviceOrientationEvent!=='undefined',
   permission:'unknown', // 'unknown' | 'granted' | 'denied' | 'unsupported' | 'insecure'
   hasData:false,
-  rawAngle:0,
-  neutralAngle:0,
-  needsAutoCal:false,
-  smoothed:0,
+  neutral:0,
   steer:0,
-  sensitivity:1.2,
-  deadzone:3.0,
-  smoothing:0.35,
+  sens:3,
+  assist:2,
+  autoGas:true,
+  isActive(){return mobileUI&&g.enabled&&g.hasData},
+  assistAmount(){return ASSIST[g.assist]},
   loadPrefs(){
    try{
-    const raw=localStorage.getItem(STORE);if(!raw)return;
-    const p=JSON.parse(raw);
-    if(typeof p.sensitivity==='number')g.sensitivity=clamp(p.sensitivity,0.5,2.5);
-    if(typeof p.deadzone==='number')g.deadzone=clamp(p.deadzone,0,10);
-    if(typeof p.smoothing==='number')g.smoothing=clamp(p.smoothing,0,0.85);
-    if(p.enabled===true)g.enabled=true;
+    const p=JSON.parse(localStorage.getItem(STORE)||'{}');
+    if([1,2,3,4,5].includes(p.sens))g.sens=p.sens;
+    if([0,1,2].includes(p.assist))g.assist=p.assist;
+    if(typeof p.autoGas==='boolean')g.autoGas=p.autoGas;
+    g.enabled=p.enabled===true;
    }catch(_){}
   },
   savePrefs(){
-   try{localStorage.setItem(STORE,JSON.stringify({enabled:g.enabled,sensitivity:g.sensitivity,deadzone:g.deadzone,smoothing:g.smoothing}))}catch(_){}
+   try{localStorage.setItem(STORE,JSON.stringify({enabled:g.enabled,sens:g.sens,assist:g.assist,autoGas:g.autoGas}))}catch(_){}
   },
-  getOrientAngle(){
-   const a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(typeof window.orientation==='number'?window.orientation:0);
-   return((a%360)+360)%360;
-  },
-  extractAxis(e){
-   const o=g.getOrientAngle();
-   if(o===90)return typeof e.beta==='number'?e.beta:null;
-   if(o===270)return typeof e.beta==='number'?-e.beta:null;
-   if(o===180)return typeof e.gamma==='number'?-e.gamma:null;
-   return typeof e.gamma==='number'?e.gamma:null;
-  },
-  resetMotion(){g.smoothed=0;g.steer=0;g.updateMeter()},
+  resetMotion(){g.steer=0;hasFilt=false;g.updateMeter()},
   updateMeter(){
-   const bar=$('gyroBar');if(!bar)return;
-   const v=g.enabled&&g.hasData?g.steer:0,pct=Math.abs(v)*50;
+   const v=g.enabled&&g.hasData?g.steer:0,pct=Math.abs(v)*50,bar=$('gyroBar');
    bar.style.left=v>=0?'50%':(50-pct)+'%';
    bar.style.width=pct+'%';
+   $('tiltDot').style.left=(50+v*45)+'%';
   },
   onOrientation(e){
-   if(!g.enabled)return;
-   const ang=g.extractAxis(e);
-   if(ang===null||!isFinite(ang))return;
-   g.hasData=true;clearTimeout(sensorTimer);
-   g.rawAngle=ang;
-   if(g.needsAutoCal){g.neutralAngle=ang;g.needsAutoCal=false;g.smoothed=0}
-   const delta=dAngle(ang,g.neutralAngle),absD=Math.abs(delta);
-   let target=0;
-   if(absD>g.deadzone){
-    const maxTilt=clamp(32/g.sensitivity,10,65);
-    target=clamp(Math.sign(delta)*(absD-g.deadzone)/Math.max(4,maxTilt-g.deadzone),-1,1);
-   }
-   g.smoothed=lerp(target,g.smoothed,g.smoothing);
-   if(target===0&&Math.abs(g.smoothed)<0.005)g.smoothed=0;
-   g.steer=paused?0:g.smoothed;
+   if(!g.enabled||!Number.isFinite(e.beta)||!Number.isFinite(e.gamma))return;
+   const o=orientAngle();
+   if(o!==lastOrient){lastOrient=o;hasFilt=false}
+   const raw=tiltWheelAngle(e.beta,e.gamma,o),now=e.timeStamp||performance.now();
+   if(!hasFilt){filt=raw;hasFilt=true}
+   else{ // time-based filter: steady when still, quick when the player moves
+    const dt=clamp((now-lastT)/1000,.001,.1),tau=lerp(.09,.025,clamp(Math.abs(raw-filt)/10,0,1));
+    filt+=(raw-filt)*(1-Math.exp(-dt/tau))}
+   lastT=now;
+   if(cal){cal.push(filt);if(cal.length>40)cal.shift()}
+   g.steer=tiltCurve(filt-g.neutral,FULL[g.sens-1]);
+   if(!g.hasData){g.hasData=true;clearTimeout(sensorTimer);g.syncUI()}
    g.updateMeter();
-   if($('gyroStatus').dataset.wait==='1')g.syncUI();
+  },
+  startCal(){g.neutral=0;cal=[]},
+  endCal(){
+   if(cal&&cal.length)g.neutral=clamp(cal.reduce((s,v)=>s+v,0)/cal.length,-MAX_OFFSET,MAX_OFFSET);
+   cal=null;
+  },
+  calibrate(){
+   if(!g.enabled||!hasFilt)return;
+   cal=null;g.neutral=clamp(filt,-MAX_OFFSET,MAX_OFFSET);g.steer=0;g.updateMeter();
+   if(driving())flash('Center set');
   },
   attachListener(){
    if(listening)return;
@@ -964,16 +999,17 @@ const GYRO=(()=>{
    removeEventListener('deviceorientation',g.onOrientation);
    listening=false;
   },
+  fail(reason){ // keeps the saved preference, so one refused prompt does not erase it
+   g.permission=reason;g.enabled=false;g.hasData=false;g.detachListener();g.syncUI();return false;
+  },
   async requestAccess(){
-   if(!g.supported){g.permission='unsupported';g.enabled=false;g.savePrefs();g.syncUI();return false}
-   if(!window.isSecureContext){g.permission='insecure';g.enabled=false;g.savePrefs();g.syncUI();return false}
+   if(!g.supported)return g.fail('unsupported');
+   if(!window.isSecureContext)return g.fail('insecure');
    if(typeof DeviceOrientationEvent.requestPermission==='function'){
-    try{
-     const res=await DeviceOrientationEvent.requestPermission();
-     if(res!=='granted'){g.permission='denied';g.enabled=false;g.savePrefs();g.syncUI();return false}
-    }catch(_){g.permission='denied';g.enabled=false;g.savePrefs();g.syncUI();return false}
+    try{if(await DeviceOrientationEvent.requestPermission()!=='granted')return g.fail('denied')}
+    catch(_){return g.fail('denied')}
    }
-   g.permission='granted';g.enabled=true;g.needsAutoCal=true;g.hasData=false;
+   g.permission='granted';g.enabled=true;g.hasData=false;hasFilt=false;
    g.attachListener();
    clearTimeout(sensorTimer);
    sensorTimer=setTimeout(()=>{if(g.enabled&&!g.hasData)g.syncUI()},1500);
@@ -981,7 +1017,7 @@ const GYRO=(()=>{
   },
   disable(){
    clearTimeout(sensorTimer);
-   g.enabled=false;g.hasData=false;g.resetMotion();
+   g.enabled=false;g.hasData=false;cal=null;g.resetMotion();
    g.detachListener();
    g.savePrefs();g.syncUI();
   },
@@ -989,45 +1025,39 @@ const GYRO=(()=>{
    if(g.enabled)g.disable();
    else await g.requestAccess();
   },
-  calibrate(){
-   if(!g.enabled)return;
-   if(g.hasData){g.neutralAngle=g.rawAngle;g.resetMotion()}
-   else g.needsAutoCal=true;
-   if(driving())flash('Gyro calibrated');
-   g.syncUI();
-  },
   syncUI(){
-   const on=g.enabled;
-   $('gyroBtn').textContent=on?'Gyro: ON':'Gyro: OFF';
-   $('gyroBtn').setAttribute('aria-pressed',on);
-   $('calBtn').hidden=!on;
-   $('calBtn').textContent=mobileUI?'Cal':'Calibrate';
-   $('gyroToggle').textContent=on?'Gyro: ON':'Gyro: OFF';
+   const on=g.enabled,active=g.isActive(),label=on?'Tilt: ON':'Tilt: OFF';
+   for(const id of['gyroBtn','gyroToggle']){$(id).textContent=label;$(id).setAttribute('aria-pressed',on)}
    $('gyroToggle').classList.toggle('on',on);
-   $('gyroToggle').setAttribute('aria-pressed',on);
+   $('calBtn').hidden=!on;
+   $('calBtn').textContent='Center';
    $('gyroCalBtn').disabled=!on;
-   $('steerPad').hidden=mobileUI&&on&&g.permission==='granted';
-   $('gyroSens').value=g.sensitivity;setText('gyroSensVal',g.sensitivity.toFixed(1)+'x');
-   $('gyroDead').value=g.deadzone;setText('gyroDeadVal',g.deadzone.toFixed(1)+'°');
-   $('gyroSmooth').value=g.smoothing;setText('gyroSmoothVal',g.smoothing.toFixed(2));
-   const st=$('gyroStatus');st.className='';st.dataset.wait='';
-   if(g.permission==='insecure'){st.className='err';st.textContent='HTTPS is required for gyroscope access. Using touch/keyboard fallback.'}
-   else if(g.permission==='unsupported'){st.className='warn';st.textContent='Gyroscope is not supported on this browser. Using touch/keyboard fallback.'}
-   else if(g.permission==='denied'){st.className='err';st.textContent='Motion permission denied. Enable it in browser settings or use touch/keyboard.'}
-   else if(on&&!g.hasData){st.className='warn';st.dataset.wait='1';st.textContent='Waiting for gyroscope sensor data... Touch/keyboard remain active.'}
-   else if(on){st.textContent='Gyroscope active. Tilt left/right to steer. Tap Calibrate to set neutral.'}
-   else{st.textContent='Gyroscope is off. Touch buttons and keyboard remain active.'}
+   // touch arrows disappear only once real sensor data is arriving
+   $('steerPad').hidden=active;
+   $('tiltHud').hidden=!active;
+   document.body.classList.toggle('tilt',active);
+   document.body.classList.toggle('autogas',active&&g.autoGas);
+   $('gyroSens').value=g.sens;setText('gyroSensVal',SENS_NAME[g.sens-1]);
+   $('gyroAssist').value=g.assist;
+   $('gyroAuto').checked=g.autoGas;
+   const st=$('gyroStatus');st.className='';
+   if(g.permission==='insecure'){st.className='err';st.textContent='Tilt needs an HTTPS page. Use the touch arrows.'}
+   else if(g.permission==='unsupported'){st.className='warn';st.textContent='This browser has no tilt support. Use the touch arrows.'}
+   else if(g.permission==='denied'){st.className='err';st.textContent='Motion access was refused. Allow it in browser settings, or use the touch arrows.'}
+   else if(on&&!g.hasData){st.className='warn';st.textContent='Waiting for the motion sensor. Touch arrows still work.'}
+   else if(on){st.textContent='Hold the phone like a steering wheel. It centers itself during the countdown.'}
+   else{st.textContent='Tilt steering is off.'}
    g.updateMeter();
   }
  };
  g.loadPrefs();
  if(g.enabled&&g.supported&&window.isSecureContext&&typeof DeviceOrientationEvent.requestPermission!=='function'){
-  g.permission='granted';g.needsAutoCal=true;g.attachListener();
+  g.permission='granted';g.attachListener();
  }
  return g;
 })();
 
-const toggleGyroPanel=show=>{$('gyroPanel').hidden=!show;if(show)GYRO.syncUI()};
+const toggleGyroPanel=show=>{$('gyroPanel').hidden=!show;if(show)GYRO.syncUI();checkOrientation()};
 $('gyroBtn').onclick=e=>{e.currentTarget.blur();GYRO.toggle()};
 $('calBtn').onclick=e=>{e.currentTarget.blur();GYRO.calibrate()};
 $('gyroCfgBtn').onclick=e=>{e.currentTarget.blur();toggleGyroPanel(true)};
@@ -1036,12 +1066,14 @@ $('gyroClose').onclick=()=>toggleGyroPanel(false);
 $('gyroPanel').onclick=e=>{if(e.target===$('gyroPanel'))toggleGyroPanel(false)};
 $('gyroToggle').onclick=()=>GYRO.toggle();
 $('gyroCalBtn').onclick=()=>GYRO.calibrate();
-$('gyroSens').oninput=e=>{GYRO.sensitivity=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
-$('gyroDead').oninput=e=>{GYRO.deadzone=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
-$('gyroSmooth').oninput=e=>{GYRO.smoothing=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
+$('gyroSens').oninput=e=>{GYRO.sens=Number(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
+$('gyroAssist').onchange=e=>{GYRO.assist=Number(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
+$('gyroAuto').onchange=e=>{GYRO.autoGas=e.target.checked;GYRO.savePrefs();GYRO.syncUI()};
 
-$('goBtn').onclick=()=>{aud();if(mobileUI)enterFullscreen();if(GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();init()};
-$('again').onclick=()=>{aud();if(mobileUI)enterFullscreen();if(GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();init()};
+// Ask for motion access first: iOS only allows the prompt directly from a tap.
+const startRace=()=>{aud();if(mobileUI&&GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();if(mobileUI)enterFullscreen();init()};
+$('goBtn').onclick=startRace;
+$('again').onclick=startRace;
 
 /* ================= MAIN LOOP ================= */
 let W=0,H=0;
