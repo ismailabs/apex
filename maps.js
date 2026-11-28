@@ -687,10 +687,111 @@ const APEX_MAPS = (() => {
     return added;
   }
 
-  // ---- Env builder stubs --------------------------------------------------
-  const BUILDERS = { classic: buildClassic, city: buildCity, desert: buildDesert, glacier: buildGlacier, volcano: buildVolcano, forest: buildForest, jungle: buildJungle };
-  const stub = (id) => (ctx) => { buildCommonTrack(ctx); console.warn('[maps] biome props stub:', id); return []; };
-  for (const m of LIST) m.buildEnv = BUILDERS[m.id] || stub(m.id);
+  // ---- Coastal builder ----------------------------------------------------
+  function buildCoastal(ctx) {
+    const { THREE, scene, track, tex, speckle, instanced, box, lam, disposeList, rand, onTick } = ctx;
+    const { WALL, clearOf } = track;
+    const added = [];
+
+    const sandTex = tex(256, 256, speckle('#e3cf94', 2200, 'rgba(255,250,225,.3)', 'rgba(180,150,90,.2)', 3), 180, 180);
+    // Animated turquoise ocean plane at y = -0.55 around the coastal peninsula
+    const oceanTex = tex(256, 256, (g, w, h) => {
+      g.fillStyle = '#129bb8'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 160; i++) {
+        g.fillStyle = rand() < 0.45 ? 'rgba(180,250,255,.35)' : 'rgba(10,115,145,.3)';
+        g.fillRect(rand() * w, rand() * h, 10 + rand() * 24, 3 + rand() * 5);
+      }
+    }, 36, 36);
+    const oceanGeo = new THREE.PlaneGeometry(2600, 2600);
+    const oceanMat = new THREE.MeshPhongMaterial({ map: oceanTex, color: 0x1aa6c8, specular: 0xffffff, shininess: 80 });
+    const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+    ocean.rotation.x = -Math.PI / 2; ocean.position.y = -0.55;
+    scene.add(ocean); added.push(ocean); disposeList.push(oceanGeo, oceanMat);
+    onTick(dt => { oceanTex.offset.x += dt * 0.04; oceanTex.offset.y += dt * 0.025; });
+
+    // Sandy beach island plateau + white shoreline foam rim
+    const islandGeo = new THREE.BoxGeometry(1020, 0.5, 620);
+    const islandMat = new THREE.MeshLambertMaterial({ map: sandTex });
+    const island = new THREE.Mesh(islandGeo, islandMat);
+    island.position.set(25, -0.32, 0); island.receiveShadow = true;
+    scene.add(island); added.push(island); disposeList.push(islandGeo, islandMat);
+
+    const foamGeo = new THREE.BoxGeometry(1036, 0.12, 636);
+    const foamMat = new THREE.MeshBasicMaterial({ color: 0xeafaff, transparent: true, opacity: 0.72 });
+    const foam = new THREE.Mesh(foamGeo, foamMat);
+    foam.position.set(25, -0.5, 0);
+    scene.add(foam); added.push(foam); disposeList.push(foamGeo, foamMat);
+
+    // Track ribbons + promenade barriers (transparent groundMat since island provides the beach)
+    const dummyGroundMat = new THREE.MeshBasicMaterial({ visible: false });
+    buildCommonTrack(ctx, {
+      groundMat: dummyGroundMat,
+      shoulderA: '#dcc688',
+      shoulderB: '#d2bb7c',
+      curbA: 0x1aa6c8,
+      curbB: 0xffffff,
+      wallOpts: { colorA: '#1aa6c8', colorB: '#ffffff', base: '#f2f2f2', emissive: 0x182228 }
+    });
+
+    // Coastal cliffs (inland side)
+    const cliffMat = lam(0x9a8970);
+    for (let k = 0; k < 14; k++) {
+      const x = -480 + k * 72 + (rand() - 0.5) * 20, z = -340 - rand() * 60;
+      if (clearOf(x, z) < WALL + 20) continue;
+      box(48 + rand() * 30, 18 + rand() * 24, 34 + rand() * 20, cliffMat, x, 8, z);
+    }
+
+    // Coastal palms
+    const pTrunks = [], pFronds = [];
+    let tries = 0;
+    while (pTrunks.length < 180 && tries++ < 3000) {
+      const x = -460 + rand() * 960, z = -290 + rand() * 580, d = clearOf(x, z);
+      if (d < WALL + 6) continue;
+      const s = 0.8 + rand() * 0.7, r = rand() * 6.28;
+      pTrunks.push({ x, y: 3.2 * s, z, s, r });
+      pFronds.push({ x, y: 6.4 * s, z, sx: s * 1.3, sy: s * 0.5, sz: s * 1.3, r });
+    }
+    added.push(
+      instanced(new THREE.CylinderGeometry(0.16, 0.3, 6.4, 6), lam(0x7c5a38), pTrunks, true),
+      instanced(new THREE.ConeGeometry(2.6, 1.3, 7), lam(0x3a9644), pFronds, true)
+    );
+
+    // Lighthouse on headland
+    const lx = 465, lz = 190;
+    const lg = new THREE.Group(); lg.position.set(lx, 0, lz); scene.add(lg); added.push(lg);
+    const wMat = lam(0xf4f4f4), rMat = lam(0xd8262f), beaconMat = new THREE.MeshBasicMaterial({ color: 0xfff2a0 });
+    disposeList.push(beaconMat);
+    for (let t = 0; t < 4; t++) {
+      const cGeo = new THREE.CylinderGeometry(2.6 - t * 0.35, 2.95 - t * 0.35, 5.5, 12);
+      const seg = new THREE.Mesh(cGeo, t % 2 ? rMat : wMat);
+      seg.position.y = t * 5.5 + 2.75; lg.add(seg); disposeList.push(cGeo);
+    }
+    const bGeo = new THREE.CylinderGeometry(1.4, 1.4, 2.5, 10);
+    const beacon = new THREE.Mesh(bGeo, beaconMat);
+    beacon.position.y = 23; lg.add(beacon); disposeList.push(bGeo);
+
+    // Mediterranean villas (white walls + terracotta roofs)
+    const terraMat = lam(0xc95a38);
+    let villas = 0; tries = 0;
+    while (villas < 16 && tries++ < 800) {
+      const x = -430 + rand() * 880, z = -270 + rand() * 540;
+      if (clearOf(x, z) < WALL + 18) continue;
+      const vg = new THREE.Group(); vg.position.set(x, 0, z); vg.rotation.y = rand() * 6.28;
+      scene.add(vg); added.push(vg);
+      const w = 9 + rand() * 6, h = 4.5 + rand() * 3, d = 7 + rand() * 5;
+      box(w, h, d, wMat, 0, h / 2, 0, vg);
+      box(w + 0.8, 1.2, d + 0.8, terraMat, 0, h + 0.6, 0, vg);
+      villas++;
+    }
+    return added;
+  }
+
+  // ---- Env builder registry -----------------------------------------------
+  const BUILDERS = {
+    classic: buildClassic, city: buildCity, desert: buildDesert, glacier: buildGlacier,
+    volcano: buildVolcano, forest: buildForest, jungle: buildJungle, coastal: buildCoastal
+  };
+  for (const m of LIST) m.buildEnv = BUILDERS[m.id];
 
   // ---- Weather particles (final) ------------------------------------------
   const MAX_WEATHER = 600, BOX = 90; // camera-relative volume half-size
