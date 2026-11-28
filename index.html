@@ -79,6 +79,29 @@ body.mobile #map{width:118px;height:84px;top:64px;bottom:auto}
 body.mobile #hs{min-width:128px;bottom:max(10px,env(safe-area-inset-bottom,0px));padding:4px 10px}
 body.mobile #hs b{font-size:32px}body.mobile #gear{font-size:22px;margin-left:8px}
 body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
+/* Gyroscope controls & settings panel */
+.btnRow{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.sec{background:var(--card);color:var(--ink);border:2px solid var(--line);font:700 22px 'Barlow Condensed','Arial Narrow',Arial,sans-serif;padding:12px 22px;cursor:pointer;border-radius:4px}
+.sec:hover{border-color:var(--dim)}
+#gyroPanel{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(10,12,16,.84);padding:16px;box-sizing:border-box}
+.gbox{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:6px;max-width:420px;width:100%;max-height:92vh;overflow-y:auto;padding:18px 20px;box-sizing:border-box}
+.ghead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.ghead h2{margin:0;font-size:30px;font-weight:800;line-height:1}
+.gclose{background:transparent;border:1px solid var(--line);color:var(--ink);font:700 18px 'Barlow Condensed','Arial Narrow',Arial,sans-serif;padding:4px 10px;border-radius:4px;cursor:pointer}
+.gactions{display:flex;gap:10px;margin-bottom:12px}
+.gactions button{flex:1;background:var(--panel);border:2px solid var(--line);color:var(--ink);font:700 20px 'Barlow Condensed','Arial Narrow',Arial,sans-serif;padding:9px 12px;border-radius:4px;cursor:pointer}
+.gactions button.on{background:var(--acc);border-color:#fff;color:#fff}
+.gactions button:disabled{opacity:.45;cursor:not-allowed}
+.gmeter{position:relative;height:14px;background:#0e1116;border:1px solid var(--line);border-radius:7px;margin:8px 0 14px;overflow:hidden}
+.gmeter::after{content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;background:rgba(255,255,255,.35);transform:translateX(-50%)}
+#gyroBar{position:absolute;top:2px;bottom:2px;left:50%;width:0;background:var(--acc);border-radius:5px;transition:none}
+.grow{margin-bottom:11px}
+.grow label{display:flex;justify-content:space-between;font-size:18px;font-weight:700;margin-bottom:3px}
+.grow label span{color:var(--dim);font-variant-numeric:tabular-nums}
+.grow input[type=range]{width:100%;accent-color:var(--acc);cursor:pointer;margin:0}
+#gyroStatus{font-size:16px;color:var(--dim);margin:10px 0 0;line-height:1.25}
+#gyroStatus.warn{color:#ffb020}
+#gyroStatus.err{color:#ff5c5c}
 </style>
 </head>
 <body>
@@ -97,7 +120,10 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
   <button id="b0" class="on" style="--c:#e10600" aria-pressed="true"><canvas width="440" height="260"></canvas>Rosso</button>
   <button id="b1" style="--c:#ff8000" aria-pressed="false"><canvas width="440" height="260"></canvas>Papaya</button>
  </div>
- <button class="go" id="goBtn">Start Race</button>
+ <div class="btnRow">
+  <button class="go" id="goBtn">Start Race</button>
+  <button type="button" class="sec" id="startGyroBtn">Gyro Controls</button>
+ </div>
  <p id="ctrlHint" style="font-size:17px">W A S D or arrow keys to drive. S brakes, then reverses. Space is the handbrake. R resets the car. C changes camera. M mutes.</p>
 </div></div>
 <div class="screen" id="end" hidden><div class="box">
@@ -107,7 +133,7 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
  <ol id="table"></ol>
  <button class="go" id="again">Race Again</button>
 </div></div>
-<div id="tools"><button id="mute" aria-pressed="false">Sound on (M)</button><button id="camBtn" hidden>Chase cam (C)</button><button id="resetBtn" hidden>Reset</button><button id="fsBtn" hidden>Full screen</button></div>
+<div id="tools"><button id="mute" aria-pressed="false">Sound on (M)</button><button id="camBtn" hidden>Chase cam (C)</button><button id="resetBtn" hidden>Reset</button><button id="gyroBtn" aria-pressed="false">Gyro: OFF</button><button id="calBtn" hidden>Calibrate</button><button id="gyroCfgBtn">Settings</button><button id="fsBtn" hidden>Full screen</button></div>
 <div id="touchUI" hidden>
  <div id="steerPad">
   <button type="button" class="tbtn" id="tLeft" aria-label="Steer left">◀</button>
@@ -117,6 +143,20 @@ body.mobile #msg{top:20%;font-size:24px}body.mobile #lights{top:24%}
   <button type="button" class="tbtn" id="tHb" aria-label="Handbrake">DRIFT</button>
   <button type="button" class="tbtn" id="tBrake" aria-label="Brake or Reverse">BRAKE</button>
   <button type="button" class="tbtn" id="tGas" aria-label="Throttle">GAS</button>
+ </div>
+</div>
+<div id="gyroPanel" hidden role="dialog" aria-modal="true" aria-labelledby="gyroTitle">
+ <div class="gbox">
+  <div class="ghead"><h2 id="gyroTitle">Gyroscope Steering</h2><button type="button" class="gclose" id="gyroClose">Close</button></div>
+  <div class="gactions">
+   <button type="button" id="gyroToggle" aria-pressed="false">Gyro: OFF</button>
+   <button type="button" id="gyroCalBtn" disabled>Calibrate</button>
+  </div>
+  <div class="gmeter" aria-hidden="true"><div id="gyroBar"></div></div>
+  <div class="grow"><label for="gyroSens">Sensitivity <span id="gyroSensVal">1.2x</span></label><input type="range" id="gyroSens" min="0.5" max="2.5" step="0.1" value="1.2"></div>
+  <div class="grow"><label for="gyroDead">Deadzone <span id="gyroDeadVal">3.0°</span></label><input type="range" id="gyroDead" min="0" max="10" step="0.5" value="3"></div>
+  <div class="grow"><label for="gyroSmooth">Smoothing <span id="gyroSmoothVal">0.35</span></label><input type="range" id="gyroSmooth" min="0" max="0.85" step="0.05" value="0.35"></div>
+  <p id="gyroStatus">Gyroscope is off. Touch buttons and keyboard remain active.</p>
  </div>
 </div>
 <div id="rotateWarn" hidden>
@@ -666,10 +706,12 @@ function syncModel(c,dt=0){
 
 /* ================= SIMULATION STEP (fixed 120 Hz) ================= */
 function playerInput(){
+ const kt=((K.KeyD||K.ArrowRight||T_IN.right)?1:0)-((K.KeyA||K.ArrowLeft||T_IN.left)?1:0);
+ const gy=(GYRO.enabled&&GYRO.hasData)?GYRO.steer:0;
  return{
   th:(K.KeyW||K.ArrowUp||T_IN.th)?1:0,
   br:(K.KeyS||K.ArrowDown||T_IN.br)?1:0,
-  st:((K.KeyD||K.ArrowRight||T_IN.right)?1:0)-((K.KeyA||K.ArrowLeft||T_IN.left)?1:0),
+  st:kt!==0?kt:gy,
   hb:!!(K.Space||T_IN.hb)
  }
 }
@@ -783,8 +825,8 @@ addEventListener('keydown',e=>{
  if(e.code==='KeyC'&&driving())setCam(1-camMode);
  if(e.code==='KeyM')setMute(!muted)});
 addEventListener('keyup',e=>{K[e.code]=0;if(driving()&&e.code==='Space')e.preventDefault()});
-addEventListener('blur',()=>{for(const k in K)K[k]=0;clearTouch()});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTouch();if(!AC)return;document.hidden?AC.suspend():AC.resume()});
+addEventListener('blur',()=>{for(const k in K)K[k]=0;clearTouch();GYRO.resetMotion()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTouch();GYRO.resetMotion()}if(!AC)return;document.hidden?AC.suspend():AC.resume()});
 $('mute').onclick=e=>{setMute(!muted);e.currentTarget.blur()};
 $('camBtn').onclick=e=>{setCam(1-camMode);e.currentTarget.blur()};
 $('resetBtn').onclick=e=>{e.currentTarget.blur();if(S==='race'){respawn(pl);wrongT=0}};
@@ -803,13 +845,14 @@ function enableMobileUI(){
  $('ctrlHint').textContent='Tap Start Race for full-screen landscape play. Left/Right to steer, GAS / BRAKE pedals, DRIFT for handbrake.';
  $('fsBtn').hidden=!(document.fullscreenEnabled||document.webkitFullscreenEnabled);
  if(driving()){$('touchUI').hidden=false;$('resetBtn').hidden=S!=='race'}
+ if(typeof GYRO!=='undefined')GYRO.syncUI();
  checkOrientation()}
 function checkOrientation(){
  const portrait=mobileUI&&window.innerHeight>window.innerWidth;
  $('rotateWarn').hidden=!portrait;
  if(portrait!==paused){
   paused=portrait;
-  if(paused){clearTouch();for(const k in K)K[k]=0;if(AC&&AC.state==='running')AC.suspend()}
+  if(paused){clearTouch();GYRO.resetMotion();for(const k in K)K[k]=0;if(AC&&AC.state==='running')AC.suspend()}
   else{if(AC&&AC.state==='suspended'&&!document.hidden)AC.resume();resize()}}}
 async function enterFullscreen(){
  const el=document.documentElement,req=el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen;
@@ -833,8 +876,163 @@ addEventListener('touchstart',()=>{if(!mobileUI)enableMobileUI()},{once:true,pas
 addEventListener('resize',checkOrientation);
 addEventListener('orientationchange',()=>setTimeout(checkOrientation,80));
 if(isMobile)enableMobileUI();else checkOrientation();
-$('goBtn').onclick=()=>{aud();if(mobileUI)enterFullscreen();init()};
-$('again').onclick=()=>{aud();if(mobileUI)enterFullscreen();init()};
+
+/* ================= GYROSCOPE STEERING ================= */
+const GYRO=(()=>{
+ const STORE='apexGyro';
+ const dAngle=(a,b)=>((a-b+540)%360)-180;
+ let listening=false,sensorTimer=0;
+ const g={
+  enabled:false,
+  supported:typeof window.DeviceOrientationEvent!=='undefined',
+  permission:'unknown', // 'unknown' | 'granted' | 'denied' | 'unsupported' | 'insecure'
+  hasData:false,
+  rawAngle:0,
+  neutralAngle:0,
+  needsAutoCal:false,
+  smoothed:0,
+  steer:0,
+  sensitivity:1.2,
+  deadzone:3.0,
+  smoothing:0.35,
+  loadPrefs(){
+   try{
+    const raw=localStorage.getItem(STORE);if(!raw)return;
+    const p=JSON.parse(raw);
+    if(typeof p.sensitivity==='number')g.sensitivity=clamp(p.sensitivity,0.5,2.5);
+    if(typeof p.deadzone==='number')g.deadzone=clamp(p.deadzone,0,10);
+    if(typeof p.smoothing==='number')g.smoothing=clamp(p.smoothing,0,0.85);
+    if(p.enabled===true)g.enabled=true;
+   }catch(_){}
+  },
+  savePrefs(){
+   try{localStorage.setItem(STORE,JSON.stringify({enabled:g.enabled,sensitivity:g.sensitivity,deadzone:g.deadzone,smoothing:g.smoothing}))}catch(_){}
+  },
+  getOrientAngle(){
+   const a=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(typeof window.orientation==='number'?window.orientation:0);
+   return((a%360)+360)%360;
+  },
+  extractAxis(e){
+   const o=g.getOrientAngle();
+   if(o===90)return typeof e.beta==='number'?e.beta:null;
+   if(o===270)return typeof e.beta==='number'?-e.beta:null;
+   if(o===180)return typeof e.gamma==='number'?-e.gamma:null;
+   return typeof e.gamma==='number'?e.gamma:null;
+  },
+  resetMotion(){g.smoothed=0;g.steer=0;g.updateMeter()},
+  updateMeter(){
+   const bar=$('gyroBar');if(!bar)return;
+   const v=g.enabled&&g.hasData?g.steer:0,pct=Math.abs(v)*50;
+   bar.style.left=v>=0?'50%':(50-pct)+'%';
+   bar.style.width=pct+'%';
+  },
+  onOrientation(e){
+   if(!g.enabled)return;
+   const ang=g.extractAxis(e);
+   if(ang===null||!isFinite(ang))return;
+   g.hasData=true;clearTimeout(sensorTimer);
+   g.rawAngle=ang;
+   if(g.needsAutoCal){g.neutralAngle=ang;g.needsAutoCal=false;g.smoothed=0}
+   const delta=dAngle(ang,g.neutralAngle),absD=Math.abs(delta);
+   let target=0;
+   if(absD>g.deadzone){
+    const maxTilt=clamp(32/g.sensitivity,10,65);
+    target=clamp(Math.sign(delta)*(absD-g.deadzone)/Math.max(4,maxTilt-g.deadzone),-1,1);
+   }
+   g.smoothed=lerp(target,g.smoothed,g.smoothing);
+   if(target===0&&Math.abs(g.smoothed)<0.005)g.smoothed=0;
+   g.steer=paused?0:g.smoothed;
+   g.updateMeter();
+   if($('gyroStatus').dataset.wait==='1')g.syncUI();
+  },
+  attachListener(){
+   if(listening)return;
+   addEventListener('deviceorientation',g.onOrientation);
+   listening=true;
+  },
+  detachListener(){
+   if(!listening)return;
+   removeEventListener('deviceorientation',g.onOrientation);
+   listening=false;
+  },
+  async requestAccess(){
+   if(!g.supported){g.permission='unsupported';g.enabled=false;g.savePrefs();g.syncUI();return false}
+   if(!window.isSecureContext){g.permission='insecure';g.enabled=false;g.savePrefs();g.syncUI();return false}
+   if(typeof DeviceOrientationEvent.requestPermission==='function'){
+    try{
+     const res=await DeviceOrientationEvent.requestPermission();
+     if(res!=='granted'){g.permission='denied';g.enabled=false;g.savePrefs();g.syncUI();return false}
+    }catch(_){g.permission='denied';g.enabled=false;g.savePrefs();g.syncUI();return false}
+   }
+   g.permission='granted';g.enabled=true;g.needsAutoCal=true;g.hasData=false;
+   g.attachListener();
+   clearTimeout(sensorTimer);
+   sensorTimer=setTimeout(()=>{if(g.enabled&&!g.hasData)g.syncUI()},1500);
+   g.savePrefs();g.syncUI();return true;
+  },
+  disable(){
+   clearTimeout(sensorTimer);
+   g.enabled=false;g.hasData=false;g.resetMotion();
+   g.detachListener();
+   g.savePrefs();g.syncUI();
+  },
+  async toggle(){
+   if(g.enabled)g.disable();
+   else await g.requestAccess();
+  },
+  calibrate(){
+   if(!g.enabled)return;
+   if(g.hasData){g.neutralAngle=g.rawAngle;g.resetMotion()}
+   else g.needsAutoCal=true;
+   if(driving())flash('Gyro calibrated');
+   g.syncUI();
+  },
+  syncUI(){
+   const on=g.enabled;
+   $('gyroBtn').textContent=on?'Gyro: ON':'Gyro: OFF';
+   $('gyroBtn').setAttribute('aria-pressed',on);
+   $('calBtn').hidden=!on;
+   $('gyroToggle').textContent=on?'Gyro: ON':'Gyro: OFF';
+   $('gyroToggle').classList.toggle('on',on);
+   $('gyroToggle').setAttribute('aria-pressed',on);
+   $('gyroCalBtn').disabled=!on;
+   $('steerPad').hidden=mobileUI&&on&&g.permission==='granted';
+   $('gyroSens').value=g.sensitivity;setText('gyroSensVal',g.sensitivity.toFixed(1)+'x');
+   $('gyroDead').value=g.deadzone;setText('gyroDeadVal',g.deadzone.toFixed(1)+'°');
+   $('gyroSmooth').value=g.smoothing;setText('gyroSmoothVal',g.smoothing.toFixed(2));
+   const st=$('gyroStatus');st.className='';st.dataset.wait='';
+   if(g.permission==='insecure'){st.className='err';st.textContent='HTTPS is required for gyroscope access. Using touch/keyboard fallback.'}
+   else if(g.permission==='unsupported'){st.className='warn';st.textContent='Gyroscope is not supported on this browser. Using touch/keyboard fallback.'}
+   else if(g.permission==='denied'){st.className='err';st.textContent='Motion permission denied. Enable it in browser settings or use touch/keyboard.'}
+   else if(on&&!g.hasData){st.className='warn';st.dataset.wait='1';st.textContent='Waiting for gyroscope sensor data... Touch/keyboard remain active.'}
+   else if(on){st.textContent='Gyroscope active. Tilt left/right to steer. Tap Calibrate to set neutral.'}
+   else{st.textContent='Gyroscope is off. Touch buttons and keyboard remain active.'}
+   g.updateMeter();
+  }
+ };
+ g.loadPrefs();
+ if(g.enabled&&g.supported&&window.isSecureContext&&typeof DeviceOrientationEvent.requestPermission!=='function'){
+  g.permission='granted';g.needsAutoCal=true;g.attachListener();
+ }
+ return g;
+})();
+
+const toggleGyroPanel=show=>{$('gyroPanel').hidden=!show;if(show)GYRO.syncUI()};
+$('gyroBtn').onclick=e=>{e.currentTarget.blur();GYRO.toggle()};
+$('calBtn').onclick=e=>{e.currentTarget.blur();GYRO.calibrate()};
+$('gyroCfgBtn').onclick=e=>{e.currentTarget.blur();toggleGyroPanel(true)};
+$('startGyroBtn').onclick=()=>toggleGyroPanel(true);
+$('gyroClose').onclick=()=>toggleGyroPanel(false);
+$('gyroPanel').onclick=e=>{if(e.target===$('gyroPanel'))toggleGyroPanel(false)};
+$('gyroToggle').onclick=()=>GYRO.toggle();
+$('gyroCalBtn').onclick=()=>GYRO.calibrate();
+$('gyroSens').oninput=e=>{GYRO.sensitivity=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
+$('gyroDead').oninput=e=>{GYRO.deadzone=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
+$('gyroSmooth').oninput=e=>{GYRO.smoothing=parseFloat(e.target.value);GYRO.savePrefs();GYRO.syncUI()};
+GYRO.syncUI();
+
+$('goBtn').onclick=()=>{aud();if(mobileUI)enterFullscreen();if(GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();init()};
+$('again').onclick=()=>{aud();if(mobileUI)enterFullscreen();if(GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();init()};
 
 /* ================= MAIN LOOP ================= */
 let W=0,H=0;
