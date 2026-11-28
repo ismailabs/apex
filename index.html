@@ -658,10 +658,6 @@ function chassis(L, o) {
     wh.spin.userData.r = ra; wh.spin.userData.rear = !front; // rear flag: lets syncModel lock rear wheels under handbrake
     piv.add(wh.spin); piv.add(wh.cal); wheels.push(wh.spin); if (front) pivots.push(piv);
   }
-  const pod = (ax, ra, yt, len, mat) => {
-    const w = .18, yb = 2 * ra - .1;
-    for (const s of [-1, 1]) add([[ax - len, w * .7, yb, yt - .08, w * .4], [ax - len * .4, w, yb, yt, w * .8], [ax + len * .4, w, yb, yt, w * .8], [ax + len, w * .7, yb, yt - .08, w * .4]], mat || M, s * (o.track + .02));
-  };
   const seatM = PH(o.seat, { shininess: 20 });
   for (const s of [-1, 1]) {
     b(.36, .1, .36, seatM, o.seatX, .44, s * .3);
@@ -671,7 +667,7 @@ function chassis(L, o) {
   const helmet = new THREE.Mesh(new THREE.SphereGeometry(.13, 14, 10), helmMat); helmet.position.set(o.seatX - .06, .96, -.3); body.add(helmet);
   const visor = new THREE.Mesh(new THREE.SphereGeometry(.134, 14, 8, -.9 + Math.PI, 1.8, 1.15, .5), visorMat); visor.position.copy(helmet.position); body.add(visor);
   const mirror = (x, y, mat) => { for (const s of [-1, 1]) { strut([x, y - .06, s * .82], [x + .03, y, s * .98], .018, D, body); b(.09, .06, .15, mat || M, x + .03, y, s * 1.02); } };
-  return { g, body, M, D, A, G, add, b, pod, wheels, pivots, helmet, visor, mirror };
+  return { g, body, M, D, A, G, add, b, wheels, pivots, helmet, visor, mirror };
 }
 
 /* ---------- small helpers for details ---------- */
@@ -823,40 +819,70 @@ function chiron(L) {
    livery: m = white, d = carbon, a = lime
    ====================================================================== */
 function jesko(L) {
-  const c = chassis(L, { fx: 1.12, fr: .34, fw: .30, rx: -1.68, rr: .357, rw: .38, track: .82, seat: 0x1b1d22, seatX: -.2,
+  const c = chassis(L, { fx: 1.12, fr: .34, fw: .26, rx: -1.68, rr: .357, rw: .34, track: .82, seat: 0x1b1d22, seatX: -.2,
     wheel: { n: 5, rim: PH(0x3a3f4a, { shininess: 100, specular: 0x999999 }), cap: BA(0x9dff1a), cal: PH(L.a, { shininess: 80 }) } });
-  const { M, D, A, G, add, b, body } = c;
-  add([[-2.45, .62, .17, .24, .62], [-1.7, .9, .17, .24, .9], [1.12, .86, .17, .24, .86], [2.1, .46, .19, .25, .46]], D);
-  add([[-2.45, .72, .34, .78, .5], [-2.0, .90, .30, .96, .60], [-1.55, .94, .28, 1.0, .66], [-.95, .92, .27, .94, .62], [-.3, .92, .26, .68, .66],
-       [.4, .92, .25, .62, .66], [1.0, .88, .26, .56, .60], [1.5, .78, .27, .46, .50], [1.85, .58, .27, .38, .38], [2.1, .38, .28, .32, .26]], M);
-  c.pod(-1.68, .357, 1.0, .62); c.pod(1.12, .34, .64, .6);
-  // teardrop greenhouse with body-colour roof and a dark glass panel
-  add([[-1.2, .50, .84, .98, .30], [-.7, .70, .70, 1.18, .42], [-.1, .76, .66, 1.215, .46], [.5, .72, .62, 1.1, .42], [1.05, .62, .58, .72, .40]], G);
-  add([[-.7, .40, 1.15, 1.2, .30], [-.1, .46, 1.185, 1.235, .34], [.5, .42, 1.07, 1.12, .30]], M);
-  b(.5, .012, .5, D, -.12, 1.245, 0);
-  // front splitter, side skirts, vents, lime accents
-  b(.62, .035, 1.72, D, 2.0, .2, 0);
+  const { M, D, A, G, b, body } = c;
+  const arches = [[1.12, .34], [-1.68, .357]];
+  const bp = makeBodyProfile(
+    [[-2.46, .76], [-2.05, .88], [-1.68, .92], [-1.10, .88], [-.40, .80], [.35, .75], [.85, .74], [1.12, .75], [1.62, .57], [1.96, .42], [2.14, .32]],
+    [[-2.46, .30], [-2.05, .20], [-1.20, .17], [.65, .17], [1.65, .19], [2.14, .22]],
+    [[-2.46, .54], [-2.10, .86], [-1.68, .97], [-1.05, .93], [-.30, .88], [.55, .88], [1.12, .94], [1.62, .71], [1.96, .52], [2.14, .34]],
+    arches
+  );
+  body.add(bp.build(M, -2.46, 2.14, .15, (x, w) => w * (x < -1.2 ? .72 : x > 1.3 ? .60 : .78)));
+  // carbon side skirts & tucked front splitter with lime ticks
+  const sk = makeBodyProfile(
+    [[-2.42, .26], [-1.95, .22], [-1.15, .21], [.75, .21], [1.65, .22], [2.18, .23]],
+    [[-2.42, .16], [-1.15, .16], [.75, .16], [2.18, .18]],
+    [[-2.42, .50], [-1.68, .72], [-.50, .89], [.75, .89], [1.65, .68], [2.18, .36]],
+    arches
+  );
+  body.add(sk.build(D, -2.42, 2.18, .2, (x, w) => w * .92));
+  b(.24, .022, .96, D, 2.04, .185, 0);
+  b(.16, .016, .04, A, 2.12, .192, 0);
+  // recessed hood vent outlined in lime
+  b(.44, .014, .46, D, 1.16, bp.topY(1.16) - .002, 0).rotation.z = -.20;
+  b(.03, .012, .48, A, 1.38, bp.topY(1.38) + .002, 0).rotation.z = -.22;
   for (const s of [-1, 1]) {
-    b(.03, .04, .5, A, 2.3, .22, s * .62); b(1.9, .06, .06, D, 0, .23, s * .97); b(.3, .03, .05, A, .8, .21, s * .98);
-    b(.7, .26, .05, D, -.75, .5, s * .935); b(.4, .03, .1, A, -.75, .66, s * .93);
-    b(.46, .012, .03, A, 1.12, .55, s * .27);
-    for (const q of [-.5, 0]) b(.03, .05, .06, BA(0xeaf4ff), 1.66 + q * 0, .44, s * (.6 + q * .05)).rotation.y = s * .3;
+    b(.38, .012, .025, A, 1.18, bp.topY(1.18) + .002, s * .23).rotation.z = -.20;
+    b(.14, .015, .04, A, 2.04, .195, s * .43);
+    b(.22, .015, .035, A, -1.16, .20, s * .88);
   }
-  b(.5, .02, .5, D, 1.12, .545, 0);
-  // rear: diffuser fins, centre pipe, slim tail lamps
-  for (let i = 0; i < 7; i++) b(.55, .15, .025, D, -2.35, .22, -.6 + i * .2);
-  tailpipes(c, -2.46, .42, [0], .1, .22);
-  // big rear wing on swan-neck struts, tall endplates
-  const wing = b(.64, .035, 1.92, M, -2.3, 1.36, 0); wing.rotation.z = -.1;
-  const flap = b(.26, .03, 1.92, A, -2.62, 1.43, 0); flap.rotation.z = -.35;
+  // teardrop cabin glass + white roof with dark sunroof panel
+  const rY = [[-1.30, .86], [-.85, 1.06], [-.40, 1.18], [-.05, 1.21], [.35, 1.13], [.78, .92], [1.08, .74]];
+  const rW = [[-1.30, .28], [-.85, .40], [-.40, .46], [-.05, .46], [.35, .44], [.78, .42], [1.08, .38]];
+  const gBase = [[-1.30, .78], [-.50, .74], [.35, .72], [1.08, .72]];
+  body.add(cabinGlass(rY, rW, gBase, -1.30, 1.08, G));
+  const roofCap = makeBodyProfile([[-.75, 1.09], [-.35, 1.195], [.05, 1.215], [.35, 1.14]], [[-.75, 1.04], [-.35, 1.14], [.05, 1.16], [.35, 1.09]], [[-.75, .30], [-.35, .38], [.05, .39], [.35, .35]]);
+  body.add(roofCap.build(M, -.75, .35, .14, (x, w) => w * .84));
+  b(.42, .016, .42, D, -.12, 1.212, 0);
+  // side intake recess + flush headlamps
   for (const s of [-1, 1]) {
-    b(.75, .5, .04, D, -2.35, 1.34, s * .96);
-    strut([-2.0, .94, s * .5], [-2.18, 1.2, s * .5], .035, D, body); strut([-2.18, 1.2, s * .5], [-2.3, 1.34, s * .5], .035, D, body);
+    strut([1.04, .74, s * .40], [.35, 1.12, s * .34], .022, M, body);
+    const intake = makeBodyProfile([[-1.08, .62], [-.76, .60], [-.46, .54]], [[-1.08, .32], [-.76, .34], [-.46, .38]], [[-1.08, .02], [-.76, .03], [-.46, .02]]);
+    const im = intake.build(D, -1.08, -.46, .15, (x, w) => w);
+    im.position.z = s * (bp.halfWidth(-.76) - .005); body.add(im);
+    const hl = b(.22, .020, .09, BA(0xeaf4ff), 1.68, bp.topY(1.68) - .002, s * .48);
+    hl.rotation.y = s * .24; hl.rotation.z = -.24;
   }
-  c.mirror(.7, .76);
-  return finish(c, [-.65, 1.62, 0], (rain, run) => {
-    for (const s of [-1, 1]) b(.03, .05, .42, run, -2.45, .74, s * .52);
-    b(.03, .04, .3, rain, -2.47, .66, 0);
+  // rear: deep diffuser with fins, big central exhaust, large swan-neck wing
+  for (let i = 0; i < 7; i++) b(.44, .14, .022, D, -2.30, .22, -.54 + i * .18);
+  tailpipes(c, -2.42, .38, [0], .092, .18);
+  const wing = b(.48, .030, 1.82, M, -2.26, 1.36, 0); wing.rotation.z = -.10;
+  const flap = b(.20, .025, 1.82, A, -2.52, 1.42, 0); flap.rotation.z = -.32;
+  for (const s of [-1, 1]) {
+    // swept slim endplates
+    const ep = b(.48, .20, .03, D, -2.30, 1.36, s * .91); ep.rotation.z = -.16;
+    // swan-neck pylons from engine deck up and over wing
+    strut([-1.58, .88, s * .32], [-1.96, 1.24, s * .40], .032, D, body);
+    strut([-1.96, 1.24, s * .40], [-2.22, 1.38, s * .40], .032, D, body);
+  }
+  c.mirror(.68, .75);
+  return finish(c, [-.55, 1.48, 0], (rain, run) => {
+    for (const s of [-1, 1]) {
+      const tl = b(.025, .035, .26, run, -2.445, .68, s * .34); tl.rotation.y = -s * .18;
+    }
+    b(.025, .04, .24, rain, -2.46, .58, 0);
   });
 }
 
