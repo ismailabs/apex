@@ -1087,10 +1087,10 @@ function trk(c,dt){
  c.surf=c.onTrack?'road':GRAVEL[bi]===Math.sign(lat)?'gravel':'grass';
  if(pv>N*.8&&bi<N*.2){c.laps++;if(c.laps>c.maxLaps){c.maxLaps=c.laps;lapEv(c)}}else if(pv<N*.2&&bi>N*.8)c.laps--}
 function lapEv(c){
- if(S!=='race'||c.done)return;
- if(c.laps>=2){const t=raceT-c.lapStart;if(t<c.best)c.best=t;if(c.isP){beep(880,.25);beep(1320,.35,.12);if(c.laps<=LAPS)flash(c.laps===LAPS?'Final lap':'Lap '+fmt(t))}}
+ if((S!=='race'&&S!=='end')||c.done)return;
+ if(c.laps>=2){const t=raceT-c.lapStart;if(t<c.best)c.best=t;if(c.isP&&S==='race'){beep(880,.25);beep(1320,.35,.12);if(c.laps<=LAPS)flash(c.laps===LAPS?'Final lap':'Lap '+fmt(t))}}
  c.lapStart=raceT;
- if(c.laps===LAPS+1){c.done=true;c.finishT=raceT;order.push(c);if(c.isP)endRace()}}
+ if(c.laps===LAPS+1){c.done=true;c.finishT=raceT;order.push(c);if(c.isP&&S==='race')endRace();else if(S==='end')renderResults()}}
 function flash(t){$('msg').textContent=t;msgTimer=2}
 
 function ai(c,dt){
@@ -1115,7 +1115,7 @@ function collide(){
   if(!best)continue;
   const{d,nx,nz}=best,p=(2.1-d)/2;a.x-=nx*p;a.z-=nz*p;b.x+=nx*p;b.z+=nz*p;
   const rv=(b.vx-a.vx)*nx+(b.vz-a.vz)*nz;
-  if(rv<0){const m=-rv*.62;a.vx-=m*nx;a.vz-=m*nz;b.vx+=m*nx;b.vz+=m*nz;if((a.isP||b.isP)&&-rv>4&&clock-lastThud>.18){lastThud=clock;thud(-rv/50);shake=Math.max(shake,Math.min(.7,-rv/20))}}}}
+  if(rv<0){const m=-rv*.62;a.vx-=m*nx;a.vz-=m*nz;b.vx+=m*nx;b.vz+=m*nz;if(S==='race'&&(a.isP||b.isP)&&-rv>4&&clock-lastThud>.18){lastThud=clock;thud(-rv/50);shake=Math.max(shake,Math.min(.7,-rv/20))}}}}
 
 function fx(c){
  const f=Math.cos(c.a),g=Math.sin(c.a),sp=c.spd;
@@ -1167,13 +1167,17 @@ function step(dt){
   cd-=dt;const n=Math.max(0,Math.ceil(cd-.0001));pl.thr=playerInput().th;
   const lit=clamp(Math.floor((3.2-cd)/.58),0,5);startLamps.forEach((l,i)=>l.color.set(i<lit?0xff1a1a:0x2a0505));
   if(n!==lastN){lastN=n;if(n>0){beep(520,.15);$('lights').textContent=Math.min(3,n)}else{beep(1040,.45);$('lights').textContent='GO';S='race';GYRO.endCal();startLamps.forEach(l=>l.color.set(0x22ff55));goTimer=setTimeout(()=>$('lights').textContent='',800)}}}
- else if(S==='race'){
-  raceT+=dt;
-  for(const c of cars){phys(c,dt,c.isP?playerInput():ai(c,dt));trk(c,dt);if(S!=='race')break}
-  if(S==='race'){collide();for(const c of cars)fx(c)}
-  const wrong=pl.vf>5&&Math.cos(dA(pl.a,T[pl.idx]))<-.4;wrongT=wrong?wrongT+dt:0;
-  if(wrongT>.8){$('msg').textContent=mobileUI?'Wrong way. Open Settings to reset':'Wrong way. Press R to reset';msgTimer=.1}
-  if(raceT>6)startLamps.forEach(l=>l.color.set(0x2a0505))}
+ else if(S==='race'||S==='end'){
+  const racing=S==='race',pending=racing||cars.some(c=>!c.done);
+  if(pending){
+   raceT+=dt;
+   for(const c of cars){phys(c,dt,(racing&&c.isP)?playerInput():ai(c,dt));trk(c,dt)}
+   collide();for(const c of cars)fx(c);
+   if(!racing&&Math.floor(raceT*10)!==Math.floor((raceT-dt)*10))renderResults()}
+  if(racing){
+   const wrong=pl.vf>5&&Math.cos(dA(pl.a,T[pl.idx]))<-.4;wrongT=wrong?wrongT+dt:0;
+   if(wrongT>.8){$('msg').textContent=mobileUI?'Wrong way. Open Settings to reset':'Wrong way. Press R to reset';msgTimer=.1}
+   if(raceT>6)startLamps.forEach(l=>l.color.set(0x2a0505))}}
  if(msgTimer>0){msgTimer-=dt;if(msgTimer<=0)$('msg').textContent=''}}
 
 /* ---------- HUD ---------- */
@@ -1249,15 +1253,17 @@ function updateSun(){
  sun.target.position.set(x,0,z);sun.position.set(x+SUN_DIR.x*150,SUN_DIR.y*150,z+SUN_DIR.z*150)}
 
 /* ================= RESULTS ================= */
+function renderResults(){
+ const result=order.concat(cars.filter(c=>!c.done).sort((a,b)=>score(b)-score(a)));
+ $('podium').innerHTML=[[1,50],[0,72],[2,36]].map(([i,h])=>`<div>${result[i].name}<i style="--c:${result[i].liv.m};height:${h}px">${i+1}</i></div>`).join('');
+ $('table').innerHTML=result.map((c,i)=>`<li class="${c.isP?'me':''}" style="--c:${c.liv.m}"><b>${ord[i]}</b><s></s><span>${c.name}</span><em>${c.done?fmt(c.finishT):'still racing'}</em></li>`).join('')}
 function endRace(){
  S='end';beep(660,.3);beep(880,.3,.15);beep(1320,.5,.3);
  clearTimeout(goTimer);$('lights').textContent='';$('msg').textContent='';msgTimer=0;document.body.classList.remove('racing');
  $('hud').hidden=true;$('touchUI').hidden=true;$('settingsPanel').hidden=true;clearTouch();
  const place=order.indexOf(pl);
  $('pos').textContent=ord[place];$('tt').textContent=fmt(pl.finishT);$('eb').textContent=fmt(pl.best);
- const result=order.concat(cars.filter(c=>!c.done).sort((a,b)=>score(b)-score(a)));
- $('podium').innerHTML=[[1,50],[0,72],[2,36]].map(([i,h])=>`<div>${result[i].name}<i style="--c:${result[i].liv.m};height:${h}px">${i+1}</i></div>`).join('');
- $('table').innerHTML=result.map((c,i)=>`<li class="${c.isP?'me':''}" style="--c:${c.liv.m}"><b>${ord[i]}</b><s></s><span>${c.name}</span><em>${c.done?fmt(c.finishT):'still racing'}</em></li>`).join('');
+ renderResults();
  $('end').hidden=false}
 
 /* ================= INPUT & UI ================= */
@@ -1531,7 +1537,7 @@ function frame(t){
  const dt=Math.min(.1,Math.max(0,(t-last)/1000)||0);last=t;
  if(!paused){
   acc+=dt;while(acc>=STEP){step(STEP);acc-=STEP}
-  for(const c of cars)syncModel(c,S==='race'?dt:0);
+  for(const c of cars)syncModel(c,(S==='race'||S==='end')?dt:0);
   updateHUD();updateAudio();render(dt)}
  requestAnimationFrame(frame)}
 const list=$('carList');
