@@ -148,7 +148,7 @@ body.autogas #tGas{display:none}
  <div class="st"><div><b id="tt">0:00.000</b><span>Total time</span></div><div><b id="eb">--</b><span>Best lap</span></div></div>
  <div id="podium"></div>
  <ol id="table"></ol>
- <button class="go" id="again">Race Again</button>
+ <button class="go" id="homeBtn">Return to Home</button>
 </div></div>
 <div id="tools"><button id="mute" aria-pressed="false">Sound on (M)</button><button id="camBtn" hidden>Chase cam (C)</button><button id="resetBtn" hidden>Reset</button><button id="gyroBtn" aria-pressed="false">Gyro: OFF</button><button id="calBtn" hidden>Calibrate</button><button id="gyroCfgBtn">Settings</button><button id="fsBtn" hidden>Full screen</button></div>
 <div id="touchUI" hidden>
@@ -1460,7 +1460,7 @@ $('gyroAuto').onchange=e=>{GYRO.autoGas=e.target.checked;GYRO.savePrefs();GYRO.s
 // Ask for motion access first: iOS only allows the prompt directly from a tap.
 const startRace=()=>{aud();if(mobileUI&&GYRO.enabled&&GYRO.permission!=='granted')GYRO.requestAccess();if(mobileUI)enterFullscreen();init()};
 $('goBtn').onclick=startRace;
-$('again').onclick=startRace;
+$('homeBtn').onclick=()=>{S='menu';newGrid();$('end').hidden=true;$('start').hidden=false};
 
 /* ================= MAIN LOOP ================= */
 let W=0,H=0;
